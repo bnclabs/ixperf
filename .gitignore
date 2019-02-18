@@ -1,2 +1,5 @@
 /target
 **/*.rs.bk
+*.swp
+target
+Cargo.lock
