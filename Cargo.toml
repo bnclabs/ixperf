@@ -1,7 +1,15 @@
 [package]
 name = "ixperf"
 version = "0.1.0"
+description = "Performance testing for index algorithms"
+repository = "https://github.com/bnclabs/ixperf"
+keywords = ["performance", "testing"]
+categories = ["testing"]
 authors = ["prataprc <prataprc@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+structopt = { version = "0.2", default-features = false }
+rand = "0.6.4"
+im="12.3.0"
+llrb-index = {path = "../llrb-index/"}

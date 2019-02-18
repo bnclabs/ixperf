@@ -17,13 +17,7 @@ impl Display for Error {
 
 #[derive(Debug, StructOpt, Clone)]
 pub(crate) struct CmdOpt {
-    pub(crate) command: String,
-
-    #[structopt(long = "working-set", default_value = "1.0")]
-    pub(crate) working_set: f64,
-
-    #[structopt(long = "load", default_value = "10000000")]
-    pub(crate) load: u64,
+    pub(crate) index: String,
 
     #[structopt(long = "ktype", default_value = "u64")]
     pub(crate) ktype: String,
@@ -31,14 +25,41 @@ pub(crate) struct CmdOpt {
     #[structopt(long = "vtype", default_value = "u64")]
     pub(crate) vtype: String,
 
+    #[structopt(long = "working-set", default_value = "1.0")]
+    pub(crate) working_set: f64,
+
+    #[structopt(long = "load", default_value = "10000000")]
+    pub(crate) load: u64,
+
     #[structopt(long = "lsm")]
     pub(crate) lsm: bool,
 
     #[structopt(long = "seed", default_value = "0")]
     pub(crate) seed: u128,
 
-    #[structopt(long = "ops", default_value = "1000000000")]
-    pub(crate) ops: u64,
+    #[structopt(long = "create", default_value = "1000000")]
+    pub(crate) creates: u64,
+
+    #[structopt(long = "sets", default_value = "1000000")]
+    pub(crate) sets: u64,
+
+    #[structopt(long = "setcas", default_value = "1000000")]
+    pub(crate) setcas: u64,
+
+    #[structopt(long = "deletes", default_value = "1000000")]
+    pub(crate) deletes: u64,
+
+    #[structopt(long = "gets", default_value = "1000000")]
+    pub(crate) gets: u64,
+
+    #[structopt(long = "iters", default_value = "1000000")]
+    pub(crate) iters: u64,
+
+    #[structopt(long = "ranges", default_value = "1000000")]
+    pub(crate) ranges: u64,
+
+    #[structopt(long = "revrs", default_value = "1000000")]
+    pub(crate) revrs: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -80,4 +101,20 @@ impl Opt {
         rng.fill(val_slice);
         val
     }
+
+    pub(crate) fn incremental_load(&self) -> bool {
+        (self.cmdopt.creates
+            + self.cmdopt.sets
+            + self.cmdopt.setcas
+            + self.cmdopt.deletes
+            + self.cmdopt.gets
+            + self.cmdopt.iters
+            + self.cmdopt.ranges
+            + self.cmdopt.revrs)
+            > 0
+    }
+}
+
+pub enum Cmd<T> {
+    Load { key: T, value: T },
 }
