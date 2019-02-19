@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-pub(crate) struct Latency {
+pub struct Latency {
     count: u64,
     start: SystemTime,
     min: u64,
@@ -9,7 +9,7 @@ pub(crate) struct Latency {
 }
 
 impl Latency {
-    pub(crate) fn new() -> Latency {
+    pub fn new() -> Latency {
         let mut l = Latency {
             count: 0,
             start: SystemTime::now(),
@@ -21,12 +21,12 @@ impl Latency {
         l
     }
 
-    pub(crate) fn start(&mut self) {
+    pub fn start(&mut self) {
         self.count += 1;
         self.start = SystemTime::now();
     }
 
-    pub(crate) fn stop(&mut self) {
+    pub fn stop(&mut self) {
         let elapsed = self.start.elapsed().unwrap().as_nanos() as u64;
         if self.min == 0 || elapsed < self.min {
             self.min = elapsed
@@ -41,16 +41,9 @@ impl Latency {
         }
     }
 
-    pub(crate) fn percentiles(&self) -> [(i32, u64); 14] {
+    pub fn percentiles(&self) -> [(i32, u64); 7] {
         let total: u64 = self.latencies.iter().sum();
         let mut percentiles = [
-            (10, 0_u64),
-            (20, 0_u64),
-            (30, 0_u64),
-            (40, 0_u64),
-            (50, 0_u64),
-            (60, 0_u64),
-            (70, 0_u64),
             (80, 0_u64),
             (90, 0_u64),
             (95, 0_u64),
@@ -75,7 +68,17 @@ impl Latency {
         percentiles
     }
 
-    pub(crate) fn stats(&self) -> (u64, u64) {
+    pub fn stats(&self) -> (u64, u64) {
         (self.min, self.max)
+    }
+
+    pub fn print_latency(&self, elapsed: u128) {
+        let (min, max) = self.stats();
+        let avg = (elapsed as u64) / self.count;
+        println!("latency (min, max, avg): {:?} in nanos", (min, max, avg));
+        println!("latency percentiles ----");
+        for (percentile, ns_cent) in self.percentiles().into_iter() {
+            println!("    {} percentile = {}ns", percentile, ns_cent * 100);
+        }
     }
 }

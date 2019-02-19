@@ -5,7 +5,7 @@ use structopt::StructOpt;
 
 #[derive(Debug)]
 #[allow(dead_code)]
-pub(crate) enum Error {
+pub enum Error {
     TypeError(String),
 }
 
@@ -16,105 +16,97 @@ impl Display for Error {
 }
 
 #[derive(Debug, StructOpt, Clone)]
-pub(crate) struct CmdOpt {
-    pub(crate) index: String,
+pub struct Opt {
+    pub index: String,
 
-    #[structopt(long = "ktype", default_value = "u64")]
-    pub(crate) ktype: String,
+    #[structopt(long = "key-size", default_value = "16")]
+    pub keysize: usize,
 
-    #[structopt(long = "vtype", default_value = "u64")]
-    pub(crate) vtype: String,
+    #[structopt(long = "val-size", default_value = "16")]
+    pub valsize: usize,
 
     #[structopt(long = "working-set", default_value = "1.0")]
-    pub(crate) working_set: f64,
+    pub working_set: f64,
 
-    #[structopt(long = "load", default_value = "10000000")]
-    pub(crate) load: u64,
+    #[structopt(long = "load", default_value = "1000000")]
+    pub load: usize,
 
     #[structopt(long = "lsm")]
-    pub(crate) lsm: bool,
+    pub lsm: bool,
 
     #[structopt(long = "seed", default_value = "0")]
-    pub(crate) seed: u128,
+    pub seed: u128,
+
+    #[structopt(long = "readers", default_value = "1")]
+    pub readers: usize,
 
     #[structopt(long = "create", default_value = "1000000")]
-    pub(crate) creates: u64,
+    pub creates: usize,
 
     #[structopt(long = "sets", default_value = "1000000")]
-    pub(crate) sets: u64,
-
-    #[structopt(long = "setcas", default_value = "1000000")]
-    pub(crate) setcas: u64,
+    pub sets: usize,
 
     #[structopt(long = "deletes", default_value = "1000000")]
-    pub(crate) deletes: u64,
+    pub deletes: usize,
 
     #[structopt(long = "gets", default_value = "1000000")]
-    pub(crate) gets: u64,
+    pub gets: usize,
 
     #[structopt(long = "iters", default_value = "1000000")]
-    pub(crate) iters: u64,
+    pub iters: usize,
 
     #[structopt(long = "ranges", default_value = "1000000")]
-    pub(crate) ranges: u64,
+    pub ranges: usize,
 
     #[structopt(long = "revrs", default_value = "1000000")]
-    pub(crate) revrs: u64,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct Opt {
-    pub(crate) cmdopt: CmdOpt,
-    pub(crate) keysize: usize,
-    pub(crate) valsize: usize,
+    pub revrs: usize,
 }
 
 impl Opt {
-    pub(crate) fn new() -> Opt {
-        let cmdopt = CmdOpt::from_args();
-        let mut opt = Opt {
-            cmdopt,
-            keysize: 0,
-            valsize: 0,
-        };
-        opt.keysize = match opt.cmdopt.ktype.as_bytes()[0] as char {
-            'b' => opt.cmdopt.ktype[1..].parse().unwrap(),
-            _ => 0,
-        };
-        opt.valsize = match opt.cmdopt.vtype.as_bytes()[0] as char {
-            'b' => opt.cmdopt.vtype[1..].parse().unwrap(),
-            _ => 0,
-        };
-        opt
+    pub fn new() -> Opt {
+        Opt::from_args()
     }
 
-    pub(crate) fn gen_key(&self, rng: &mut SmallRng) -> Vec<u8> {
+    pub fn gen_key(&self, rng: &mut SmallRng) -> Vec<u8> {
         let mut key: Vec<u8> = Vec::with_capacity(self.keysize);
+        key.resize(self.keysize, 0);
         let key_slice: &mut [u8] = key.as_mut();
         rng.fill(key_slice);
         key
     }
 
-    pub(crate) fn gen_val(&mut self, rng: &mut SmallRng) -> Vec<u8> {
+    pub fn gen_value(&mut self, rng: &mut SmallRng) -> Vec<u8> {
         let mut val: Vec<u8> = Vec::with_capacity(self.valsize);
+        val.resize(self.keysize, 0);
         let val_slice: &mut [u8] = val.as_mut();
         rng.fill(val_slice);
         val
     }
 
-    pub(crate) fn incremental_load(&self) -> bool {
-        (self.cmdopt.creates
-            + self.cmdopt.sets
-            + self.cmdopt.setcas
-            + self.cmdopt.deletes
-            + self.cmdopt.gets
-            + self.cmdopt.iters
-            + self.cmdopt.ranges
-            + self.cmdopt.revrs)
-            > 0
+    pub fn init_load(&self) -> usize {
+        self.load
+    }
+
+    pub fn incr_load(&self) -> usize {
+        self.creates + self.sets + self.deletes + self.gets + self.iters + self.ranges + self.revrs
+    }
+
+    pub fn read_load(&self) -> usize {
+        self.gets + self.iters + self.ranges + self.revrs
+    }
+
+    pub fn write_load(&self) -> usize {
+        self.creates + self.sets + self.deletes
     }
 }
 
-pub enum Cmd<T> {
-    Load { key: T, value: T },
+pub enum Cmd {
+    Load { key: Vec<u8> },
+    Create { key: Vec<u8> },
+    Set { key: Vec<u8> },
+    Delete { key: Vec<u8> },
+    Get { key: Vec<u8> },
+    Iter,
+    Range { low: Vec<u8>, high: Vec<u8> },
+    Reverse { low: Vec<u8>, high: Vec<u8> },
 }

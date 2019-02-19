@@ -1,12 +1,28 @@
 use std::sync::atomic::{AtomicPtr, Ordering::Relaxed};
 use std::sync::mpsc;
+use std::thread;
 use std::time::SystemTime;
 
 use im::ordmap::OrdMap;
 
+use crate::generator::init_generators;
 use crate::opts::{Cmd, Opt};
 
-pub(crate) struct SharedOrdMap<K, V>
+pub fn perf(opt: Opt) {
+    if opt.load > 0 {
+        let (tx_idx, rx_idx) = mpsc::channel();
+        let (tx_ref, rx_ref) = mpsc::channel();
+        let newopt = opt.clone();
+        let loader = thread::spawn(move || init_generators(newopt, tx_idx, tx_ref));
+        do_initial(&opt, SharedOrdMap::new(), rx_idx);
+        for _item in rx_ref {
+            // do nothing
+        }
+        loader.join().unwrap();
+    }
+}
+
+struct SharedOrdMap<K, V>
 where
     K: Ord + Clone,
     V: Clone,
@@ -19,7 +35,7 @@ where
     K: Ord + Clone,
     V: Clone,
 {
-    pub(crate) fn new() -> SharedOrdMap<K, V> {
+    fn new() -> SharedOrdMap<K, V> {
         SharedOrdMap {
             index: AtomicPtr::new(Box::leak(Box::new(OrdMap::new()))),
         }
@@ -35,21 +51,24 @@ where
     }
 }
 
-pub(crate) fn do_initial_u64(
-    _opt: &Opt,
-    omap: SharedOrdMap<u64, u64>,
-    rx: mpsc::Receiver<Cmd<u64>>,
-) -> SharedOrdMap<u64, u64> {
+fn do_initial(
+    opt: &Opt,
+    omap: SharedOrdMap<Vec<u8>, Vec<u8>>,
+    rx: mpsc::Receiver<Cmd>,
+) -> SharedOrdMap<Vec<u8>, Vec<u8>> {
     use crate::latency::Latency;
 
     let mut index = omap.load();
     let mut latency = Latency::new();
 
     let start = SystemTime::now();
+    let mut value: Vec<u8> = Vec::with_capacity(opt.valsize);
+    value.resize(opt.valsize, 0xAD);
     for cmd in rx {
         latency.start();
         match cmd {
-            Cmd::Load { key, value } => index = Box::new(index.update(key, value)),
+            Cmd::Load { key } => index = Box::new(index.update(key, value.clone())),
+            _ => unreachable!(),
         };
         latency.stop();
     }
@@ -66,17 +85,3 @@ pub(crate) fn do_initial_u64(
 
     omap
 }
-
-//pub(crate) fn do_create_u64(
-//    _opt: &Opt,
-//    mut omap: SharedOrdMap<u64, u64>,
-//    rx: mpsc::Receiver<Cmd<u64>>,
-//) -> SharedOrdMap<u64, u64> {
-//    // just do it !!
-//    for cmd in rx {
-//        match cmd {
-//            Cmd::Load { key, value } => omap.insert(key, value),
-//        };
-//    }
-//    omap
-//}
