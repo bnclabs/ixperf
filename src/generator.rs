@@ -1,3 +1,4 @@
+use std::ops::Bound;
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::SystemTime;
@@ -46,14 +47,22 @@ fn init_generator(
     println!("init-gen({}): {} items in {:?}", id, n, elapsed);
 }
 
-pub fn read_generator(id: i32, opt: Opt, tx: mpsc::Sender<Cmd>, refn: Llrb<Vec<u8>, Vec<u8>>) {
+pub fn read_generator(id: i32, opt: Opt, tx: mpsc::Sender<Cmd>, mut refn: Llrb<Vec<u8>, Vec<u8>>) {
     let start = SystemTime::now();
     let mut rng = SmallRng::from_seed(opt.seed.to_le_bytes());
 
     let (mut gets, mut iters, mut ranges, mut revrs) = (opt.gets, opt.iters, opt.ranges, opt.revrs);
     let mut total = gets + iters + ranges + revrs;
+    let mut creates = opt.creates;
+    let empty_value: Vec<u8> = vec![];
     while total > 0 {
         let r: usize = rng.gen::<usize>() % total;
+        if r < creates {
+            creates -= 1; // tail the writer if configured with creates.
+            let key = opt.gen_key(&mut rng);
+            refn.set(key, empty_value.clone());
+        }
+
         let cmd = if r < gets {
             gets -= 1;
             let (key, _value) = refn.random(&mut rng).unwrap();
@@ -65,11 +74,13 @@ pub fn read_generator(id: i32, opt: Opt, tx: mpsc::Sender<Cmd>, refn: Llrb<Vec<u
             ranges -= 1;
             let (low, _value) = refn.random(&mut rng).unwrap();
             let (high, _value) = refn.random(&mut rng).unwrap();
+            let (low, high) = random_low_high(low, high, &mut rng);
             Cmd::Range { low, high }
         } else if r < (gets + iters + ranges + revrs) {
             revrs -= 1;
             let (low, _value) = refn.random(&mut rng).unwrap();
             let (high, _value) = refn.random(&mut rng).unwrap();
+            let (low, high) = random_low_high(low, high, &mut rng);
             Cmd::Reverse { low, high }
         } else {
             unreachable!();
@@ -120,4 +131,25 @@ pub fn write_generator(opt: Opt, tx: mpsc::Sender<Cmd>, mut refn: Llrb<Vec<u8>, 
 
     let elapsed = start.elapsed().unwrap();
     println!("write-gen: {} items in {:?}", opt.write_load(), elapsed);
+}
+
+fn random_low_high(
+    low: Vec<u8>,
+    high: Vec<u8>,
+    rng: &mut SmallRng,
+) -> (Bound<Vec<u8>>, Bound<Vec<u8>>) {
+    let low = match rng.gen::<i32>() % 3 {
+        0 => Bound::Included(low),
+        1 => Bound::Excluded(low),
+        2 => Bound::Unbounded,
+        _ => unreachable!(),
+    };
+    let high = match rng.gen::<i32>() % 3 {
+        0 => Bound::Included(high),
+        1 => Bound::Excluded(high),
+        2 => Bound::Unbounded,
+        _ => unreachable!(),
+    };
+    //println!("low_high {:?} {:?}", low, high);
+    (low, high)
 }

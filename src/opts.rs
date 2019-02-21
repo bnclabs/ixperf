@@ -1,4 +1,5 @@
 use std::fmt::{self, Display};
+use std::ops::Bound;
 
 use rand::{rngs::SmallRng, Rng};
 use structopt::StructOpt;
@@ -101,12 +102,28 @@ impl Opt {
 }
 
 pub enum Cmd {
-    Load { key: Vec<u8> },
-    Create { key: Vec<u8> },
-    Set { key: Vec<u8> },
-    Delete { key: Vec<u8> },
-    Get { key: Vec<u8> },
+    Load {
+        key: Vec<u8>,
+    },
+    Create {
+        key: Vec<u8>,
+    },
+    Set {
+        key: Vec<u8>,
+    },
+    Delete {
+        key: Vec<u8>,
+    },
+    Get {
+        key: Vec<u8>,
+    },
     Iter,
-    Range { low: Vec<u8>, high: Vec<u8> },
-    Reverse { low: Vec<u8>, high: Vec<u8> },
+    Range {
+        low: Bound<Vec<u8>>,
+        high: Bound<Vec<u8>>,
+    },
+    Reverse {
+        low: Bound<Vec<u8>>,
+        high: Bound<Vec<u8>>,
+    },
 }
