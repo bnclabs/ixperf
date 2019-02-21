@@ -76,6 +76,7 @@ impl Opt {
         key
     }
 
+    #[allow(dead_code)]
     pub fn gen_value(&mut self, rng: &mut SmallRng) -> Vec<u8> {
         let mut val: Vec<u8> = Vec::with_capacity(self.valsize);
         val.resize(self.keysize, 0);
@@ -88,6 +89,7 @@ impl Opt {
         self.load
     }
 
+    #[allow(dead_code)]
     pub fn incr_load(&self) -> usize {
         self.creates + self.sets + self.deletes + self.gets + self.iters + self.ranges + self.revrs
     }
