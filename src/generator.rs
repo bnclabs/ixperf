@@ -44,25 +44,17 @@ fn init_generator(
         tx_ref.send(key).unwrap();
     }
     let elapsed = start.elapsed().unwrap();
-    println!("init-gen({}): {} items in {:?}", id, n, elapsed);
+    println!("init-gen{}: {} items in {:?}", id, n, elapsed);
 }
 
-pub fn read_generator(id: i32, opt: Opt, tx: mpsc::Sender<Cmd>, mut refn: Llrb<Vec<u8>, Vec<u8>>) {
+pub fn read_generator(id: i32, opt: Opt, tx: mpsc::Sender<Cmd>, refn: Llrb<Vec<u8>, Vec<u8>>) {
     let start = SystemTime::now();
     let mut rng = SmallRng::from_seed(opt.seed.to_le_bytes());
 
     let (mut gets, mut iters, mut ranges, mut revrs) = (opt.gets, opt.iters, opt.ranges, opt.revrs);
     let mut total = gets + iters + ranges + revrs;
-    let mut creates = opt.creates;
-    let empty_value: Vec<u8> = vec![];
     while total > 0 {
         let r: usize = rng.gen::<usize>() % total;
-        if r < creates {
-            creates -= 1; // tail the writer if configured with creates.
-            let key = opt.gen_key(&mut rng);
-            refn.set(key, empty_value.clone());
-        }
-
         let cmd = if r < gets {
             gets -= 1;
             let (key, _value) = refn.random(&mut rng).unwrap();
@@ -91,12 +83,7 @@ pub fn read_generator(id: i32, opt: Opt, tx: mpsc::Sender<Cmd>, mut refn: Llrb<V
     }
 
     let elapsed = start.elapsed().unwrap();
-    println!(
-        "read-gen({}): {} items in {:?}",
-        id,
-        opt.read_load(),
-        elapsed
-    );
+    println!("read-gen{}: {} items in {:?}", id, opt.read_load(), elapsed);
 }
 
 pub fn write_generator(opt: Opt, tx: mpsc::Sender<Cmd>, mut refn: Llrb<Vec<u8>, Vec<u8>>) {
@@ -138,13 +125,13 @@ fn random_low_high(
     high: Vec<u8>,
     rng: &mut SmallRng,
 ) -> (Bound<Vec<u8>>, Bound<Vec<u8>>) {
-    let low = match rng.gen::<i32>() % 3 {
+    let low = match rng.gen::<u8>() % 3 {
         0 => Bound::Included(low),
         1 => Bound::Excluded(low),
         2 => Bound::Unbounded,
         _ => unreachable!(),
     };
-    let high = match rng.gen::<i32>() % 3 {
+    let high = match rng.gen::<u8>() % 3 {
         0 => Bound::Included(high),
         1 => Bound::Excluded(high),
         2 => Bound::Unbounded,

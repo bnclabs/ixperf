@@ -53,13 +53,13 @@ pub struct Opt {
     #[structopt(long = "gets", default_value = "1000000")]
     pub gets: usize,
 
-    #[structopt(long = "iters", default_value = "1000000")]
+    #[structopt(long = "iters", default_value = "0")]
     pub iters: usize,
 
-    #[structopt(long = "ranges", default_value = "1000000")]
+    #[structopt(long = "ranges", default_value = "0")]
     pub ranges: usize,
 
-    #[structopt(long = "revrs", default_value = "1000000")]
+    #[structopt(long = "revrs", default_value = "0")]
     pub revrs: usize,
 }
 

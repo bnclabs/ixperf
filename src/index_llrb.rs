@@ -1,4 +1,4 @@
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::SystemTime;
 
@@ -11,33 +11,50 @@ use crate::opts::{Cmd, Opt};
 pub fn perf(opt: Opt) {
     println!("\n==== INITIAL LOAD ====");
     let mut index = Llrb::new("ixperf");
-    let mut refn = Llrb::new("reference");
+    let refn = Arc::new(Llrb::new("reference"));
     let (opt1, opt2) = (opt.clone(), opt.clone());
 
     let (tx_idx, rx_idx) = mpsc::channel();
     let (tx_ref, rx_ref) = mpsc::channel();
+
     let generator = thread::spawn(move || init_generators(opt1, tx_idx, tx_ref));
-    let runner = thread::spawn(|| do_initial(opt2, &mut index, rx_idx));
-    for item in rx_ref {
-        let value: Vec<u8> = vec![];
-        refn.set(item, value);
-    }
+
+    let refn1 = Arc::clone(&refn);
+    let reference = thread::spawn(move || {
+        let refn1 = unsafe {
+            (Arc::into_raw(refn1) as *mut Llrb<Vec<u8>, Vec<u8>>)
+                .as_mut()
+                .unwrap()
+        };
+        for item in rx_ref {
+            let value: Vec<u8> = vec![];
+            refn1.set(item, value);
+        }
+        let _refn1 = unsafe { Arc::from_raw(refn1) };
+    });
+
+    do_initial(opt2, &mut index, rx_idx);
+
     generator.join().unwrap();
-    runner.join().unwrap();
+    reference.join().unwrap();
 
     println!("\n==== INCREMENTAL LOAD ====");
-    let refn1 = refn.clone();
-    let (opt1, opt2) = (opt.clone(), opt.clone());
+    let refn1 = if let Ok(refn) = Arc::try_unwrap(refn) {
+        refn
+    } else {
+        unreachable!();
+    };
+    let refn2 = refn1.clone();
+    let (opt1, opt2, opt3) = (opt.clone(), opt.clone(), opt.clone());
 
     let (tx_r, rx) = mpsc::channel();
     let tx_w = mpsc::Sender::clone(&tx_r);
-    let generator_r = thread::spawn(move || read_generator(1, opt1, tx_r, refn));
-    let generator_w = thread::spawn(move || write_generator(opt2, tx_w, refn1));
+    let generator_r = thread::spawn(move || read_generator(1, opt1, tx_r, refn1));
+    let generator_w = thread::spawn(move || write_generator(opt2, tx_w, refn2));
 
-    let runner = thread::spawn(|| do_incremental(opt2, &mut index, rx));
+    do_incremental(opt3, &mut index, rx);
     generator_r.join().unwrap();
     generator_w.join().unwrap();
-    runner.join().unwrap();
 }
 
 fn do_initial(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiver<Cmd>) {
