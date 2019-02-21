@@ -1,4 +1,4 @@
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 pub struct Latency {
     count: u64,
@@ -71,19 +71,30 @@ impl Latency {
         percentiles
     }
 
+    pub fn average(&self) -> u64 {
+        ((self.elapsed as u64) / self.count) as u64
+    }
+
+    pub fn count(&self) -> u64 {
+        self.count
+    }
+
     pub fn stats(&self) -> (u128, u128) {
         (self.min, self.max)
     }
 
     pub fn print_latency(&self, prefix: &str) {
         let (min, max) = self.stats();
-        let avg = (self.elapsed as u64) / self.count;
-        let arg1 = (min, max, avg);
-        println!("{}latency (min, max, avg): {:?} in nanos", prefix, arg1);
+        let arg1 = (
+            Duration::from_nanos(min as u64),
+            Duration::from_nanos(max as u64),
+            Duration::from_nanos(self.average() as u64),
+        );
+        println!("{}latency (min, max, avg): {:?}", prefix, arg1);
         println!("{}latency percentiles ----", prefix);
         for (percentile, ns_cent) in self.percentiles().into_iter() {
-            let ns = ns_cent * 100;
-            println!("{}    {} percentile = {}ns", prefix, percentile, ns);
+            let ns = Duration::from_nanos((ns_cent * 100) as u64);
+            println!("{}    {} percentile = {:?}", prefix, percentile, ns);
         }
     }
 }

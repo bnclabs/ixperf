@@ -49,7 +49,7 @@ fn init_generator(
 
 pub fn read_generator(id: i32, opt: Opt, tx: mpsc::Sender<Cmd>, refn: Llrb<Vec<u8>, Vec<u8>>) {
     let start = SystemTime::now();
-    let mut rng = SmallRng::from_seed(opt.seed.to_le_bytes());
+    let mut rng = SmallRng::from_seed((opt.seed + 1).to_le_bytes());
 
     let (mut gets, mut iters, mut ranges, mut revrs) = (opt.gets, opt.iters, opt.ranges, opt.revrs);
     let mut total = gets + iters + ranges + revrs;
@@ -58,6 +58,7 @@ pub fn read_generator(id: i32, opt: Opt, tx: mpsc::Sender<Cmd>, refn: Llrb<Vec<u
         let cmd = if r < gets {
             gets -= 1;
             let (key, _value) = refn.random(&mut rng).unwrap();
+            //println!("{:?}", key);
             Cmd::Get { key }
         } else if r < (gets + iters) {
             iters -= 1;
@@ -88,7 +89,7 @@ pub fn read_generator(id: i32, opt: Opt, tx: mpsc::Sender<Cmd>, refn: Llrb<Vec<u
 
 pub fn write_generator(opt: Opt, tx: mpsc::Sender<Cmd>, mut refn: Llrb<Vec<u8>, Vec<u8>>) {
     let start = SystemTime::now();
-    let mut rng = SmallRng::from_seed(opt.seed.to_le_bytes());
+    let mut rng = SmallRng::from_seed((opt.seed + 2).to_le_bytes());
 
     let (mut creates, mut sets, mut deletes) = (opt.creates, opt.sets, opt.deletes);
     let mut total = creates + sets + deletes;

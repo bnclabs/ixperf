@@ -1,6 +1,6 @@
 use std::sync::{mpsc, Arc};
 use std::thread;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use llrb_index::Llrb;
 
@@ -77,22 +77,13 @@ fn do_initial(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiver<C
 
     let (elapsed, len) = (start.elapsed().unwrap(), index.count());
     let rate = len / ((elapsed.as_nanos() / 1000_000_000) as u64);
-    println!("loaded {} items in {:?} @ {} ops/sec", len, elapsed, rate);
+    let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
+    println!("loaded {} items in {:?} @ {} ops/sec", len, dur, rate);
     latency.print_latency("    ");
 }
 
 fn do_incremental(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiver<Cmd>) {
-    let op_names = ["create", "set", "delete", "get", "iter", "range", "reverse"];
-    let mut latencies: Vec<Latency> = vec![
-        Latency::new(),
-        Latency::new(),
-        Latency::new(),
-        Latency::new(),
-        Latency::new(),
-        Latency::new(),
-        Latency::new(),
-    ];
-    let mut counts: Vec<usize> = vec![0, 0, 0, 0, 0, 0, 0];
+    let mut op_stats = init_stats();
     let mut value: Vec<u8> = Vec::with_capacity(opt.valsize);
     value.resize(opt.valsize, 0xAD);
     let mut ops = 0;
@@ -102,65 +93,133 @@ fn do_incremental(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiv
         ops += 1;
         match cmd {
             Cmd::Create { key } => {
-                latencies[0].start();
+                op_stats[0].latency.start();
                 index.create(key, value.clone());
-                latencies[0].stop();
-                counts[0] += 1;
+                op_stats[0].latency.stop();
+                op_stats[0].count += 1;
             }
             Cmd::Set { key } => {
-                latencies[1].start();
+                op_stats[1].latency.start();
                 index.set(key, value.clone());
-                latencies[1].stop();
-                counts[1] += 1;
+                op_stats[1].latency.stop();
+                op_stats[1].count += 1;
             }
             Cmd::Delete { key } => {
-                latencies[2].start();
+                op_stats[2].latency.start();
                 index.delete(&key);
-                latencies[2].stop();
-                counts[2] += 1;
+                op_stats[2].latency.stop();
+                op_stats[2].count += 1;
             }
             Cmd::Get { key } => {
-                latencies[3].start();
+                op_stats[3].latency.start();
                 index.get(&key);
-                latencies[3].stop();
-                counts[3] += 1;
+                op_stats[3].latency.stop();
+                op_stats[3].count += 1;
             }
             Cmd::Iter => {
                 let iter = index.iter();
-                iter.for_each(|_| {
-                    latencies[4].start();
-                    counts[4] += 1;
-                    latencies[4].stop();
-                });
+                op_stats[4].latency.start();
+                iter.for_each(|_| op_stats[4].items += 1);
+                op_stats[4].latency.stop();
+                op_stats[4].count += 1;
             }
             Cmd::Range { low, high } => {
                 let iter = index.range(low, high);
-                iter.for_each(|_| {
-                    latencies[5].start();
-                    counts[5] += 1;
-                    latencies[5].stop();
-                });
+                op_stats[5].latency.start();
+                iter.for_each(|_| op_stats[5].items += 1);
+                op_stats[5].latency.stop();
+                op_stats[5].count += 1;
             }
             Cmd::Reverse { low, high } => {
                 let iter = index.range(low, high).rev();
-                iter.for_each(|_| {
-                    latencies[6].start();
-                    counts[6] += 1;
-                    latencies[6].stop();
-                });
+                op_stats[6].latency.start();
+                iter.for_each(|_| op_stats[6].items += 1);
+                op_stats[6].latency.stop();
+                op_stats[6].count += 1;
             }
             _ => unreachable!(),
         };
     }
 
     let (elapsed, len) = (start.elapsed().unwrap(), index.count());
-    println!("incr ops {}, {:?} index-len: {}", ops, elapsed, len);
+    let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
+    println!("incr ops {} in {:?}, index-len: {}", ops, dur, len);
 
-    for (i, op_name) in op_names.iter().enumerate() {
-        if counts[i] == 0 {
+    for op_stat in op_stats.iter() {
+        if op_stat.count == 0 {
             continue;
         }
-        println!("{} ops {}", op_name, counts[i]);
-        latencies[i].print_latency("    ");
+        match op_stat.name.as_str() {
+            "create" | "set" | "delete" | "get" => {
+                println!("{} ops {}", op_stat.name, op_stat.count);
+            }
+            "iter" | "range" | "reverse" => {
+                println!(
+                    "{} ops {}, items: {}",
+                    op_stat.name, op_stat.count, op_stat.items
+                );
+                let dur = Duration::from_nanos(
+                    (op_stat.latency.average() * op_stat.latency.count()) / op_stat.items,
+                );
+                println!("    average latency per item: {:?}", dur);
+            }
+            _ => unreachable!(),
+        }
+        op_stat.latency.print_latency("    ");
     }
+}
+
+struct OpStat {
+    name: String,
+    latency: Latency,
+    count: u64,
+    items: u64,
+}
+
+fn init_stats() -> [OpStat; 7] {
+    let (count, items) = (0, 0);
+    [
+        OpStat {
+            name: "create".to_string(),
+            latency: Latency::new(),
+            count,
+            items,
+        },
+        OpStat {
+            name: "set".to_string(),
+            latency: Latency::new(),
+            count,
+            items,
+        },
+        OpStat {
+            name: "delete".to_string(),
+            latency: Latency::new(),
+            count,
+            items,
+        },
+        OpStat {
+            name: "get".to_string(),
+            latency: Latency::new(),
+            count,
+            items,
+        },
+        OpStat {
+            name: "iter".to_string(),
+            latency: Latency::new(),
+            count,
+            items,
+        },
+        OpStat {
+            name: "range".to_string(),
+            latency: Latency::new(),
+            count,
+            items,
+        },
+        OpStat {
+            name: "reverse".to_string(),
+            latency: Latency::new(),
+            count,
+            items,
+        },
+    ]
 }
