@@ -2,77 +2,157 @@ use std::time::Duration;
 
 use crate::latency::Latency;
 
-pub struct OpStat {
+pub struct Op {
     pub name: String,
     pub latency: Latency,
-    pub count: u64,
-    pub items: u64,
+    pub count: usize,
+    pub items: usize,
 }
 
-pub fn init_stats() -> [OpStat; 7] {
-    let (count, items) = (0, 0);
-    [
-        OpStat {
-            name: "create".to_string(),
-            latency: Latency::new(),
-            count,
-            items,
-        },
-        OpStat {
-            name: "set".to_string(),
-            latency: Latency::new(),
-            count,
-            items,
-        },
-        OpStat {
-            name: "delete".to_string(),
-            latency: Latency::new(),
-            count,
-            items,
-        },
-        OpStat {
-            name: "get".to_string(),
-            latency: Latency::new(),
-            count,
-            items,
-        },
-        OpStat {
-            name: "iter".to_string(),
-            latency: Latency::new(),
-            count,
-            items,
-        },
-        OpStat {
-            name: "range".to_string(),
-            latency: Latency::new(),
-            count,
-            items,
-        },
-        OpStat {
-            name: "reverse".to_string(),
-            latency: Latency::new(),
-            count,
-            items,
-        },
-    ]
-}
-
-pub fn print_stats(op_stats: &[OpStat; 7]) {
-    for s in op_stats.iter() {
-        if s.count == 0 {
-            continue;
+impl Op {
+    fn pretty_print(&self, p: &str) {
+        if self.count == 0 {
+            return;
         }
-        match s.name.as_str() {
-            "create" | "set" | "delete" | "get" if s.count > 0 => {
-                println!("{} ops {}", s.name, s.count);
+
+        let (c, i) = (self.count, self.items);
+        match self.name.as_str() {
+            "load" => {
+                println!("{}load ops {}, updates {}", p, c, i);
             }
-            "iter" | "range" | "reverse" if s.count > 0 => {
-                println!("{} ops {}, items: {}", s.name, s.count, s.items);
-                let dur = Duration::from_nanos((s.latency.average() * s.latency.count()) / s.items);
-                println!("    average latency per item: {:?}", dur);
+            "create" => {
+                println!("{}create ops {}, updates {}", p, c, i);
+            }
+            "set" => {
+                println!("{}set ops {}, inserts {}", p, c, i);
+            }
+            "delete" => {
+                println!("{}delete ops {}, missing {}", p, c, i);
+            }
+            "get" => {
+                println!("{}get ops {}, missing {}", p, c, i);
+            }
+            "iter" => {
+                let t = self.latency.mean() * (self.latency.samples() as u128);
+                let ns = t / (self.items as u128);
+                let dur = Duration::from_nanos(ns as u64);
+                println!("{}iter ops {}, items {} mean {:?}", p, c, i, dur);
+            }
+            "range" => {
+                let t = self.latency.mean() * (self.latency.samples() as u128);
+                let ns = t / (self.items as u128);
+                let dur = Duration::from_nanos(ns as u64);
+                println!("{}range ops {}, items {} mean {:?}", p, c, i, dur);
+            }
+            "reverse" => {
+                let t = self.latency.mean() * (self.latency.samples() as u128);
+                let ns = t / (self.items as u128);
+                let dur = Duration::from_nanos(ns as u64);
+                println!("{}revese ops {}, items {} mean {:?}", p, c, i, dur);
             }
             _ => unreachable!(),
         }
-        s.latency.print_latency("    ");
+        self.latency.pretty_print(p);
+    }
+
+    pub fn json(&self) -> String {
+        let strs = [
+            format!("latency: {}", self.latency.json()),
+            format!("count: {}", self.count),
+            format!("items: {}", self.items),
+        ];
+        ("{ ".to_string() + &strs.join(", ") + " }").to_string()
+    }
+}
+
+pub struct Ops {
+    pub load: Op,
+    pub create: Op,
+    pub set: Op,
+    pub delete: Op,
+    pub get: Op,
+    pub iter: Op,
+    pub range: Op,
+    pub reverse: Op,
+}
+
+impl Ops {
+    pub fn new() -> Ops {
+        let (count, items) = (0, 0);
+        Ops {
+            load: Op {
+                name: "load".to_string(),
+                latency: Latency::new(),
+                count,
+                items,
+            },
+            create: Op {
+                name: "create".to_string(),
+                latency: Latency::new(),
+                count,
+                items,
+            },
+            set: Op {
+                name: "set".to_string(),
+                latency: Latency::new(),
+                count,
+                items,
+            },
+            delete: Op {
+                name: "delete".to_string(),
+                latency: Latency::new(),
+                count,
+                items,
+            },
+            get: Op {
+                name: "get".to_string(),
+                latency: Latency::new(),
+                count,
+                items,
+            },
+            iter: Op {
+                name: "iter".to_string(),
+                latency: Latency::new(),
+                count,
+                items,
+            },
+            range: Op {
+                name: "range".to_string(),
+                latency: Latency::new(),
+                count,
+                items,
+            },
+            reverse: Op {
+                name: "reverse".to_string(),
+                latency: Latency::new(),
+                count,
+                items,
+            },
+        }
+    }
+
+    pub fn pretty_print(&self, prefix: &str) {
+        self.load.pretty_print(prefix);
+        self.create.pretty_print(prefix);
+        self.set.pretty_print(prefix);
+        self.delete.pretty_print(prefix);
+        self.get.pretty_print(prefix);
+        self.iter.pretty_print(prefix);
+        self.range.pretty_print(prefix);
+        self.reverse.pretty_print(prefix);
+    }
+
+    pub fn json(&self) -> String {
+        let strs = [
+            format!("load: {}", self.load.json()),
+            format!("create: {}", self.create.json()),
+            format!("set: {}", self.set.json()),
+            format!("delete: {}", self.delete.json()),
+            format!("get: {}", self.get.json()),
+            format!("iter: {}", self.iter.json()),
+            format!("range: {}", self.range.json()),
+            format!("reverse: {}", self.reverse.json()),
+        ];
+        ("{ ".to_string() + &strs.join(", ") + " }").to_string()
     }
 }

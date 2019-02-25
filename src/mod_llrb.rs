@@ -5,8 +5,8 @@ use std::time::{Duration, SystemTime};
 use llrb_index::Llrb;
 
 use crate::generator::{init_generators, read_generator, write_generator};
-use crate::latency::Latency;
 use crate::opts::{Cmd, Opt};
+use crate::stats;
 
 pub fn perf(opt: Opt) {
     println!("\n==== INITIAL LOAD ====");
@@ -58,7 +58,7 @@ pub fn perf(opt: Opt) {
 }
 
 fn do_initial(opt: Opt, index: &mut Llrb<[u8; 16], Vec<u8>>, rx: mpsc::Receiver<Cmd>) {
-    let mut latency = Latency::new();
+    let mut op_stats = stats::Ops::new();
     let start = SystemTime::now();
 
     let mut value: Vec<u8> = Vec::with_capacity(opt.valsize);
@@ -67,9 +67,9 @@ fn do_initial(opt: Opt, index: &mut Llrb<[u8; 16], Vec<u8>>, rx: mpsc::Receiver<
     for cmd in rx {
         match cmd {
             Cmd::Load { key } => {
-                latency.start();
+                op_stats.load.latency.start();
                 index.set(key, value.clone());
-                latency.stop();
+                op_stats.load.latency.stop();
             }
             _ => unreachable!(),
         };
@@ -79,13 +79,16 @@ fn do_initial(opt: Opt, index: &mut Llrb<[u8; 16], Vec<u8>>, rx: mpsc::Receiver<
     let rate = len / ((elapsed.as_nanos() / 1000_000_000) as usize);
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
     println!("loaded {} items in {:?} @ {} ops/sec", len, dur, rate);
-    latency.print_latency("    ");
+
+    if opt.json {
+        println!("{}", op_stats.json());
+    } else {
+        op_stats.pretty_print("");
+    }
 }
 
 fn do_incremental(opt: Opt, index: &mut Llrb<[u8; 16], Vec<u8>>, rx: mpsc::Receiver<Cmd>) {
-    thread::sleep(Duration::from_millis(1000));
-
-    let mut op_stats = init_stats();
+    let mut op_stats = stats::Ops::new();
     let mut value: Vec<u8> = Vec::with_capacity(opt.valsize);
     value.resize(opt.valsize, 0xAD);
     let mut ops = 0;
@@ -95,49 +98,49 @@ fn do_incremental(opt: Opt, index: &mut Llrb<[u8; 16], Vec<u8>>, rx: mpsc::Recei
         ops += 1;
         match cmd {
             Cmd::Create { key } => {
-                op_stats[0].latency.start();
+                op_stats.create.latency.start();
                 index.create(key, value.clone());
-                op_stats[0].latency.stop();
-                op_stats[0].count += 1;
+                op_stats.create.latency.stop();
+                op_stats.create.count += 1;
             }
             Cmd::Set { key } => {
-                op_stats[1].latency.start();
+                op_stats.set.latency.start();
                 index.set(key, value.clone());
-                op_stats[1].latency.stop();
-                op_stats[1].count += 1;
+                op_stats.set.latency.stop();
+                op_stats.set.count += 1;
             }
             Cmd::Delete { key } => {
-                op_stats[2].latency.start();
+                op_stats.delete.latency.start();
                 index.delete(&key);
-                op_stats[2].latency.stop();
-                op_stats[2].count += 1;
+                op_stats.delete.latency.stop();
+                op_stats.delete.count += 1;
             }
             Cmd::Get { key } => {
-                op_stats[3].latency.start();
+                op_stats.get.latency.start();
                 index.get(&key);
-                op_stats[3].latency.stop();
-                op_stats[3].count += 1;
+                op_stats.get.latency.stop();
+                op_stats.get.count += 1;
             }
             Cmd::Iter => {
                 let iter = index.iter();
-                op_stats[4].latency.start();
-                iter.for_each(|_| op_stats[4].items += 1);
-                op_stats[4].latency.stop();
-                op_stats[4].count += 1;
+                op_stats.iter.latency.start();
+                iter.for_each(|_| op_stats.iter.items += 1);
+                op_stats.iter.latency.stop();
+                op_stats.iter.count += 1;
             }
             Cmd::Range { low, high } => {
                 let iter = index.range(low, high);
-                op_stats[5].latency.start();
-                iter.for_each(|_| op_stats[5].items += 1);
-                op_stats[5].latency.stop();
-                op_stats[5].count += 1;
+                op_stats.range.latency.start();
+                iter.for_each(|_| op_stats.range.items += 1);
+                op_stats.range.latency.stop();
+                op_stats.range.count += 1;
             }
             Cmd::Reverse { low, high } => {
                 let iter = index.range(low, high).rev();
-                op_stats[6].latency.start();
-                iter.for_each(|_| op_stats[6].items += 1);
-                op_stats[6].latency.stop();
-                op_stats[6].count += 1;
+                op_stats.reverse.latency.start();
+                iter.for_each(|_| op_stats.reverse.items += 1);
+                op_stats.reverse.latency.stop();
+                op_stats.reverse.count += 1;
             }
             _ => unreachable!(),
         };
@@ -147,81 +150,9 @@ fn do_incremental(opt: Opt, index: &mut Llrb<[u8; 16], Vec<u8>>, rx: mpsc::Recei
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
     println!("incr ops {} in {:?}, index-len: {}", ops, dur, len);
 
-    for op_stat in op_stats.iter() {
-        if op_stat.count == 0 {
-            continue;
-        }
-        match op_stat.name.as_str() {
-            "create" | "set" | "delete" | "get" => {
-                println!("{} ops {}", op_stat.name, op_stat.count);
-            }
-            "iter" | "range" | "reverse" => {
-                println!(
-                    "{} ops {}, items: {}",
-                    op_stat.name, op_stat.count, op_stat.items
-                );
-                let dur = Duration::from_nanos(
-                    (op_stat.latency.average() * op_stat.latency.count()) / op_stat.items,
-                );
-                println!("    average latency per item: {:?}", dur);
-            }
-            _ => unreachable!(),
-        }
-        op_stat.latency.print_latency("    ");
+    if opt.json {
+        println!("{}", op_stats.json());
+    } else {
+        op_stats.pretty_print("");
     }
-}
-
-struct OpStat {
-    name: String,
-    latency: Latency,
-    count: u64,
-    items: u64,
-}
-
-fn init_stats() -> [OpStat; 7] {
-    let (count, items) = (0, 0);
-    [
-        OpStat {
-            name: "create".to_string(),
-            latency: Latency::new(),
-            count,
-            items,
-        },
-        OpStat {
-            name: "set".to_string(),
-            latency: Latency::new(),
-            count,
-            items,
-        },
-        OpStat {
-            name: "delete".to_string(),
-            latency: Latency::new(),
-            count,
-            items,
-        },
-        OpStat {
-            name: "get".to_string(),
-            latency: Latency::new(),
-            count,
-            items,
-        },
-        OpStat {
-            name: "iter".to_string(),
-            latency: Latency::new(),
-            count,
-            items,
-        },
-        OpStat {
-            name: "range".to_string(),
-            latency: Latency::new(),
-            count,
-            items,
-        },
-        OpStat {
-            name: "reverse".to_string(),
-            latency: Latency::new(),
-            count,
-            items,
-        },
-    ]
 }

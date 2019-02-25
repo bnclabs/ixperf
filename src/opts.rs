@@ -32,6 +32,9 @@ pub struct Opt {
     #[structopt(long = "working-set", default_value = "1.0")]
     pub working_set: f64,
 
+    #[structopt(long = "json")]
+    pub json: bool,
+
     #[structopt(long = "lsm")]
     pub lsm: bool,
 

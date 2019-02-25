@@ -8,9 +8,8 @@ use llrb_index::Llrb;
 use lmdb::{self, Cursor, Transaction};
 
 use crate::generator::{init_generators, read_generator, write_generator};
-use crate::latency::Latency;
 use crate::opts::{Cmd, Opt};
-use crate::stats::{init_stats, print_stats};
+use crate::stats;
 
 pub fn perf(opt: Opt) {
     println!("\n==== INITIAL LOAD ====");
@@ -75,7 +74,7 @@ pub fn perf(opt: Opt) {
 }
 
 fn do_initial(opt: Opt, rx: mpsc::Receiver<Cmd>) {
-    let mut latency = Latency::new();
+    let mut op_stats = stats::Ops::new();
     let start = SystemTime::now();
 
     let (mut env, db) = init_lmdb(&opt, "ixperf");
@@ -92,9 +91,9 @@ fn do_initial(opt: Opt, rx: mpsc::Receiver<Cmd>) {
         for cmd in rx {
             match cmd {
                 Cmd::Load { key } => {
-                    latency.start();
+                    op_stats.load.latency.start();
                     txn.put(db, &key, &value, write_flags.clone()).unwrap();
-                    latency.stop();
+                    op_stats.load.latency.stop();
                 }
                 _ => unreachable!(),
             };
@@ -111,13 +110,18 @@ fn do_initial(opt: Opt, rx: mpsc::Receiver<Cmd>) {
     let rate = len / ((elapsed.as_nanos() / 1000_000_000) as usize);
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
     println!("loaded {} items in {:?} @ {} ops/sec", len, dur, rate);
-    latency.print_latency("    ");
 
     unsafe { env.close_db(db) };
+
+    if opt.json {
+        println!("{}", op_stats.json());
+    } else {
+        op_stats.pretty_print("");
+    }
 }
 
 fn do_writer(opt: Opt, rx: mpsc::Receiver<Cmd>) {
-    let mut op_stats = init_stats();
+    let mut op_stats = stats::Ops::new();
     let mut value: Vec<u8> = Vec::with_capacity(opt.valsize);
     value.resize(opt.valsize, 0xAD);
     let mut ops = 0;
@@ -130,31 +134,31 @@ fn do_writer(opt: Opt, rx: mpsc::Receiver<Cmd>) {
         ops += 1;
         match cmd {
             Cmd::Create { key } => {
-                op_stats[0].latency.start();
+                op_stats.create.latency.start();
                 let mut txn = env.begin_rw_txn().unwrap();
                 txn.put(db, &key, &value, write_flags.clone()).unwrap();
                 txn.commit().unwrap();
-                op_stats[0].latency.stop();
-                op_stats[0].count += 1;
+                op_stats.create.latency.stop();
+                op_stats.create.count += 1;
             }
             Cmd::Set { key } => {
-                op_stats[1].latency.start();
+                op_stats.set.latency.start();
                 let mut txn = env.begin_rw_txn().unwrap();
                 txn.put(db, &key, &value, write_flags.clone()).unwrap();
                 txn.commit().unwrap();
-                op_stats[1].latency.stop();
-                op_stats[1].count += 1;
+                op_stats.set.latency.stop();
+                op_stats.set.count += 1;
             }
             Cmd::Delete { key } => {
-                op_stats[2].latency.start();
+                op_stats.delete.latency.start();
                 let mut txn = env.begin_rw_txn().unwrap();
                 match txn.del(db, &key, None /*data*/) {
                     Ok(_) | Err(lmdb::Error::NotFound) => (),
                     res @ _ => panic!("lmdb del: {:?}", res),
                 }
                 txn.commit().unwrap();
-                op_stats[2].latency.stop();
-                op_stats[2].count += 1;
+                op_stats.delete.latency.stop();
+                op_stats.delete.count += 1;
             }
             _ => (),
         };
@@ -165,12 +169,17 @@ fn do_writer(opt: Opt, rx: mpsc::Receiver<Cmd>) {
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
     println!("writer ops {} in {:?}, index-len: {}", ops, dur, len);
 
-    print_stats(&op_stats);
     unsafe { env.close_db(db) };
+
+    if opt.json {
+        println!("{}", op_stats.json());
+    } else {
+        op_stats.pretty_print("");
+    }
 }
 
 fn do_reader(opt: Opt, rx: mpsc::Receiver<Cmd>) {
-    let mut op_stats = init_stats();
+    let mut op_stats = stats::Ops::new();
     let mut ops = 0;
 
     let (mut env, db) = open_lmdb(&opt, "ixperf");
@@ -180,21 +189,25 @@ fn do_reader(opt: Opt, rx: mpsc::Receiver<Cmd>) {
         ops += 1;
         match cmd {
             Cmd::Get { key } => {
-                op_stats[3].latency.start();
+                op_stats.get.latency.start();
                 let txn = env.begin_ro_txn().unwrap();
-                txn.get(db, &key).ok();
-                op_stats[3].latency.stop();
-                op_stats[3].count += 1;
+                match txn.get(db, &key) {
+                    Ok(_) => (),
+                    Err(lmdb::Error::NotFound) => op_stats.get.items += 1,
+                    Err(err) => panic!(err),
+                }
+                op_stats.get.latency.stop();
+                op_stats.get.count += 1;
             }
             Cmd::Iter => {
                 let txn = env.begin_ro_txn().unwrap();
                 let mut cur = txn.open_ro_cursor(db).unwrap();
                 let iter = cur.iter();
 
-                op_stats[4].latency.start();
-                iter.for_each(|_| op_stats[4].items += 1);
-                op_stats[4].latency.stop();
-                op_stats[4].count += 1;
+                op_stats.iter.latency.start();
+                iter.for_each(|_| op_stats.iter.items += 1);
+                op_stats.iter.latency.stop();
+                op_stats.iter.count += 1;
             }
             Cmd::Range { low, high } => {
                 let txn = env.begin_ro_txn().unwrap();
@@ -205,17 +218,17 @@ fn do_reader(opt: Opt, rx: mpsc::Receiver<Cmd>) {
                     _ => cur.iter(),
                 };
 
-                op_stats[5].latency.start();
+                op_stats.range.latency.start();
                 for (key, _value) in iter {
                     match high {
                         Bound::Included(ref high) if key > high => break,
                         Bound::Excluded(ref high) if key >= high => break,
                         _ => (),
                     }
-                    op_stats[5].items += 1;
+                    op_stats.range.items += 1;
                 }
-                op_stats[5].latency.stop();
-                op_stats[5].count += 1;
+                op_stats.range.latency.stop();
+                op_stats.range.count += 1;
             }
             Cmd::Reverse { low: _, high: _ } => (),
             _ => unreachable!(),
@@ -227,7 +240,7 @@ fn do_reader(opt: Opt, rx: mpsc::Receiver<Cmd>) {
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
     println!("reader ops {} in {:?}, index-len: {}", ops, dur, len);
 
-    print_stats(&op_stats);
+    op_stats.pretty_print("");
     unsafe { env.close_db(db) };
 }
 
