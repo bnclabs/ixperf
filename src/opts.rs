@@ -4,6 +4,8 @@ use std::ops::Bound;
 use rand::{rngs::SmallRng, Rng};
 use structopt::StructOpt;
 
+use crate::stats;
+
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum Error {
@@ -44,7 +46,7 @@ pub struct Opt {
     #[structopt(long = "readers", default_value = "1")]
     pub readers: usize,
 
-    #[structopt(long = "load", default_value = "1000000")]
+    #[structopt(long = "load", default_value = "10000000")]
     pub load: usize,
 
     #[structopt(long = "creates", default_value = "1000000")]
@@ -75,7 +77,8 @@ impl Opt {
     }
 
     pub fn gen_key(&self, rng: &mut SmallRng) -> Vec<u8> {
-        let mut key: Vec<u8> = Default::default();
+        let mut key: Vec<u8> = Vec::with_capacity(self.keysize);
+        key.resize(self.keysize, 0);
         let key_slice: &mut [u8] = key.as_mut();
         rng.fill(key_slice);
         key
@@ -84,7 +87,7 @@ impl Opt {
     #[allow(dead_code)]
     pub fn gen_value(&mut self, rng: &mut SmallRng) -> Vec<u8> {
         let mut val: Vec<u8> = Vec::with_capacity(self.valsize);
-        val.resize(self.keysize, 0);
+        val.resize(self.valsize, 0);
         let val_slice: &mut [u8] = val.as_mut();
         rng.fill(val_slice);
         val
@@ -105,6 +108,14 @@ impl Opt {
 
     pub fn write_load(&self) -> usize {
         self.creates + self.sets + self.deletes
+    }
+
+    pub fn periodic_log(&self, op_stats: &stats::Ops) {
+        if self.json {
+            println!("{}", op_stats.json());
+        } else {
+            op_stats.pretty_print("");
+        }
     }
 }
 

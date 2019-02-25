@@ -64,15 +64,21 @@ fn do_initial(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiver<C
     let mut value: Vec<u8> = Vec::with_capacity(opt.valsize);
     value.resize(opt.valsize, 0xAD);
 
+    let mut opcount = 0;
     for cmd in rx {
+        opcount += 1;
         match cmd {
             Cmd::Load { key } => {
                 op_stats.load.latency.start();
                 index.set(key, value.clone());
                 op_stats.load.latency.stop();
+                op_stats.load.count += 1;
             }
             _ => unreachable!(),
         };
+        if (opcount % crate::LOG_BATCH) == 0 {
+            opt.periodic_log(&op_stats);
+        }
     }
 
     let (elapsed, len) = (start.elapsed().unwrap(), index.count());
@@ -80,22 +86,18 @@ fn do_initial(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiver<C
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
     println!("loaded {} items in {:?} @ {} ops/sec", len, dur, rate);
 
-    if opt.json {
-        println!("{}", op_stats.json());
-    } else {
-        op_stats.pretty_print("");
-    }
+    opt.periodic_log(&op_stats)
 }
 
 fn do_incremental(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiver<Cmd>) {
     let mut op_stats = stats::Ops::new();
     let mut value: Vec<u8> = Vec::with_capacity(opt.valsize);
     value.resize(opt.valsize, 0xAD);
-    let mut ops = 0;
+    let mut opcount = 0;
 
     let start = SystemTime::now();
     for cmd in rx {
-        ops += 1;
+        opcount += 1;
         match cmd {
             Cmd::Create { key } => {
                 op_stats.create.latency.start();
@@ -144,15 +146,14 @@ fn do_incremental(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiv
             }
             _ => unreachable!(),
         };
+        if (opcount % crate::LOG_BATCH) == 0 {
+            opt.periodic_log(&op_stats);
+        }
     }
 
     let (elapsed, len) = (start.elapsed().unwrap(), index.count());
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
-    println!("incr ops {} in {:?}, index-len: {}", ops, dur, len);
+    println!("incr ops {} in {:?}, index-len: {}", opcount, dur, len);
 
-    if opt.json {
-        println!("{}", op_stats.json());
-    } else {
-        op_stats.pretty_print("");
-    }
+    opt.periodic_log(&op_stats);
 }

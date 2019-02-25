@@ -6,19 +6,21 @@ pub struct Latency {
     start: SystemTime,
     min: u128,
     max: u128,
-    latencies: [usize; 10_000_000],
+    latencies: Vec<usize>, // NOTE: large value, can't be in stack.
 }
 
 impl Latency {
     pub fn new() -> Latency {
-        Latency {
+        let mut lat = Latency {
             samples: 0,
             total: 0,
             start: SystemTime::now(),
             min: 0,
             max: 0,
-            latencies: [0; 10_000_000],
-        }
+            latencies: Vec::with_capacity(10_000_000),
+        };
+        lat.latencies.resize(10_000_000, 0);
+        lat
     }
 
     pub fn start(&mut self) {
@@ -71,6 +73,7 @@ impl Latency {
     }
 
     pub fn mean(&self) -> u128 {
+        println!("{}", self.samples);
         self.total / (self.samples as u128)
     }
 
@@ -81,10 +84,10 @@ impl Latency {
     pub fn pretty_print(&self, prefix: &str) {
         let arg1 = (
             Duration::from_nanos(self.min as u64),
-            Duration::from_nanos(self.max as u64),
             Duration::from_nanos(self.mean() as u64),
+            Duration::from_nanos(self.max as u64),
         );
-        println!("{}latency (min, max, avg): {:?}", prefix, arg1);
+        println!("{}latency (min, avg, max): {:?}", prefix, arg1);
         for (percentile, ns_cent) in self.percentiles().into_iter() {
             let ns = Duration::from_nanos((ns_cent * 100) as u64);
             println!("{}  {} percentile = {:?}", prefix, percentile, ns);
@@ -95,13 +98,13 @@ impl Latency {
         let ps: Vec<String> = self
             .percentiles()
             .into_iter()
-            .map(|(p, ns)| format!("{}: {}", p, (ns * 100)))
+            .map(|(p, ns)| format!(r#""{}": {}"#, p, (ns * 100)))
             .collect();
         let strs = [
             format!("min: {}", self.min),
             format!("mean: {}", self.mean()),
             format!("max: {}", self.max),
-            format!("percentiles: {}", ps.join(", ")),
+            format!("percentiles: {{ {} }}", ps.join(", ")),
         ];
         ("{ ".to_string() + &strs.join(", ") + " }").to_string()
     }

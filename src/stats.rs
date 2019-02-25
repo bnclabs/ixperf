@@ -56,12 +56,17 @@ impl Op {
     }
 
     pub fn json(&self) -> String {
+        if self.count == 0 {
+            return "".to_string();
+        }
+
         let strs = [
-            format!("latency: {}", self.latency.json()),
             format!("count: {}", self.count),
             format!("items: {}", self.items),
+            format!("latency: {}", self.latency.json()),
         ];
-        ("{ ".to_string() + &strs.join(", ") + " }").to_string()
+        let value = "{ ".to_string() + &strs.join(", ") + " }";
+        format!("{}: {}", self.name, value)
     }
 }
 
@@ -144,15 +149,21 @@ impl Ops {
 
     pub fn json(&self) -> String {
         let strs = [
-            format!("load: {}", self.load.json()),
-            format!("create: {}", self.create.json()),
-            format!("set: {}", self.set.json()),
-            format!("delete: {}", self.delete.json()),
-            format!("get: {}", self.get.json()),
-            format!("iter: {}", self.iter.json()),
-            format!("range: {}", self.range.json()),
-            format!("reverse: {}", self.reverse.json()),
+            self.load.json(),
+            self.create.json(),
+            self.set.json(),
+            self.delete.json(),
+            self.get.json(),
+            self.iter.json(),
+            self.range.json(),
+            self.reverse.json(),
         ];
-        ("{ ".to_string() + &strs.join(", ") + " }").to_string()
+        let strs: Vec<String> = strs.iter().filter_map(|item| {
+            if item.len() > 0 {
+                Some(item.clone())
+            } else {
+                None
+            }).collect();
+        ("stats { ".to_string() + &strs.join(", ") + " }").to_string()
     }
 }

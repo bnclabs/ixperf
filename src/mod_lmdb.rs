@@ -11,6 +11,8 @@ use crate::generator::{init_generators, read_generator, write_generator};
 use crate::opts::{Cmd, Opt};
 use crate::stats;
 
+const LMDB_BATCH: usize = 100_000;
+
 pub fn perf(opt: Opt) {
     println!("\n==== INITIAL LOAD ====");
     let refn = Arc::new(Llrb::new("reference"));
@@ -83,25 +85,28 @@ fn do_initial(opt: Opt, rx: mpsc::Receiver<Cmd>) {
     value.resize(opt.valsize, 0xAD);
 
     let write_flags: lmdb::WriteFlags = Default::default();
-    let mut seqno = 1;
+    let mut opcount = 1;
 
-    let lmdb_batch = 100_000;
     {
         let mut txn = env.begin_rw_txn().unwrap();
         for cmd in rx {
+            opcount += 1;
             match cmd {
                 Cmd::Load { key } => {
                     op_stats.load.latency.start();
                     txn.put(db, &key, &value, write_flags.clone()).unwrap();
                     op_stats.load.latency.stop();
+                    op_stats.load.count += 1;
                 }
                 _ => unreachable!(),
             };
-            if (seqno % lmdb_batch) == 0 {
+            if (opcount % LMDB_BATCH) == 0 {
                 txn.commit().unwrap();
                 txn = env.begin_rw_txn().unwrap();
             }
-            seqno += 1;
+            if (opcount % crate::LOG_BATCH) == 0 {
+                opt.periodic_log(&op_stats)
+            }
         }
     }
 
@@ -113,25 +118,21 @@ fn do_initial(opt: Opt, rx: mpsc::Receiver<Cmd>) {
 
     unsafe { env.close_db(db) };
 
-    if opt.json {
-        println!("{}", op_stats.json());
-    } else {
-        op_stats.pretty_print("");
-    }
+    opt.periodic_log(&op_stats);
 }
 
 fn do_writer(opt: Opt, rx: mpsc::Receiver<Cmd>) {
     let mut op_stats = stats::Ops::new();
     let mut value: Vec<u8> = Vec::with_capacity(opt.valsize);
     value.resize(opt.valsize, 0xAD);
-    let mut ops = 0;
+    let mut opcount = 0;
     let write_flags: lmdb::WriteFlags = Default::default();
 
     let (mut env, db) = open_lmdb(&opt, "ixperf");
 
     let start = SystemTime::now();
     for cmd in rx {
-        ops += 1;
+        opcount += 1;
         match cmd {
             Cmd::Create { key } => {
                 op_stats.create.latency.start();
@@ -162,31 +163,30 @@ fn do_writer(opt: Opt, rx: mpsc::Receiver<Cmd>) {
             }
             _ => (),
         };
+        if (opcount % crate::LOG_BATCH) == 0 {
+            opt.periodic_log(&op_stats)
+        }
     }
 
     let entries = env.stat().unwrap().entries();
     let (elapsed, len) = (start.elapsed().unwrap(), entries);
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
-    println!("writer ops {} in {:?}, index-len: {}", ops, dur, len);
+    println!("writer ops {} in {:?}, index-len: {}", opcount, dur, len);
 
     unsafe { env.close_db(db) };
 
-    if opt.json {
-        println!("{}", op_stats.json());
-    } else {
-        op_stats.pretty_print("");
-    }
+    opt.periodic_log(&op_stats)
 }
 
 fn do_reader(opt: Opt, rx: mpsc::Receiver<Cmd>) {
     let mut op_stats = stats::Ops::new();
-    let mut ops = 0;
+    let mut opcount = 0;
 
     let (mut env, db) = open_lmdb(&opt, "ixperf");
 
     let start = SystemTime::now();
     for cmd in rx {
-        ops += 1;
+        opcount += 1;
         match cmd {
             Cmd::Get { key } => {
                 op_stats.get.latency.start();
@@ -233,15 +233,19 @@ fn do_reader(opt: Opt, rx: mpsc::Receiver<Cmd>) {
             Cmd::Reverse { low: _, high: _ } => (),
             _ => unreachable!(),
         };
+        if (opcount % crate::LOG_BATCH) == 0 {
+            opt.periodic_log(&op_stats)
+        }
     }
 
     let entries = env.stat().unwrap().entries();
     let (elapsed, len) = (start.elapsed().unwrap(), entries);
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
-    println!("reader ops {} in {:?}, index-len: {}", ops, dur, len);
+    println!("reader ops {} in {:?}, index-len: {}", opcount, dur, len);
 
-    op_stats.pretty_print("");
     unsafe { env.close_db(db) };
+
+    opt.periodic_log(&op_stats);
 }
 
 fn init_lmdb(opt: &Opt, name: &str) -> (lmdb::Environment, lmdb::Database) {
