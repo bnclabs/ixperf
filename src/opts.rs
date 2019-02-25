@@ -20,6 +20,9 @@ impl Display for Error {
 pub struct Opt {
     pub index: String,
 
+    #[structopt(long = "path", default_value = "/tmp/ixperf")]
+    pub path: String,
+
     #[structopt(long = "key-size", default_value = "16")]
     pub keysize: usize,
 
@@ -28,9 +31,6 @@ pub struct Opt {
 
     #[structopt(long = "working-set", default_value = "1.0")]
     pub working_set: f64,
-
-    #[structopt(long = "load", default_value = "1000000")]
-    pub load: usize,
 
     #[structopt(long = "lsm")]
     pub lsm: bool,
@@ -41,7 +41,10 @@ pub struct Opt {
     #[structopt(long = "readers", default_value = "1")]
     pub readers: usize,
 
-    #[structopt(long = "create", default_value = "1000000")]
+    #[structopt(long = "load", default_value = "1000000")]
+    pub load: usize,
+
+    #[structopt(long = "creates", default_value = "1000000")]
     pub creates: usize,
 
     #[structopt(long = "sets", default_value = "1000000")]

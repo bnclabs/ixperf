@@ -13,3 +13,4 @@ structopt = { version = "0.2", default-features = false }
 rand = "0.6.4"
 im="12.3.0"
 llrb-index = {path = "../llrb-index/"}
+lmdb = "0.8.0"

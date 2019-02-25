@@ -1,8 +1,9 @@
 mod generator;
-mod index_llrb;
-mod index_ordmap;
 mod latency;
+mod mod_llrb;
+mod mod_lmdb;
 mod opts;
+mod stats;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -16,8 +17,8 @@ fn main() {
     println!("starting with seed = {}", opt.seed);
 
     match opt.index.as_str() {
-        "ordmap" => index_ordmap::perf(opt),
-        "llrb" => index_llrb::perf(opt),
+        "llrb" => mod_llrb::perf(opt),
+        "lmdb" => mod_lmdb::perf(opt),
         index @ _ => panic!("invalid index {}", index),
     }
 }

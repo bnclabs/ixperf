@@ -76,7 +76,7 @@ fn do_initial(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiver<C
     }
 
     let (elapsed, len) = (start.elapsed().unwrap(), index.count());
-    let rate = len / ((elapsed.as_nanos() / 1000_000_000) as u64);
+    let rate = len / ((elapsed.as_nanos() / 1000_000_000) as usize);
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
     println!("loaded {} items in {:?} @ {} ops/sec", len, dur, rate);
     latency.print_latency("    ");
