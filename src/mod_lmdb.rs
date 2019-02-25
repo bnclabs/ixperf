@@ -13,7 +13,7 @@ use crate::stats;
 
 pub fn perf(opt: Opt) {
     println!("\n==== INITIAL LOAD ====");
-    let refn: Arc<Llrb<[u8; 16], Vec<u8>>> = Arc::new(Llrb::new("reference"));
+    let refn = Arc::new(Llrb::new("reference"));
     let (opt1, opt2) = (opt.clone(), opt.clone());
 
     let (tx_idx, rx_idx) = mpsc::channel();
@@ -24,7 +24,7 @@ pub fn perf(opt: Opt) {
     let refn1 = Arc::clone(&refn);
     let reference = thread::spawn(move || {
         let refn1 = unsafe {
-            (Arc::into_raw(refn1) as *mut Llrb<[u8; 16], Vec<u8>>)
+            (Arc::into_raw(refn1) as *mut Llrb<Vec<u8>, Vec<u8>>)
                 .as_mut()
                 .unwrap()
         };

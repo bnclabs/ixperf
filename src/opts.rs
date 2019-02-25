@@ -74,8 +74,8 @@ impl Opt {
         Opt::from_args()
     }
 
-    pub fn gen_key(&self, rng: &mut SmallRng) -> [u8; 16] {
-        let mut key: [u8; 16] = Default::default();
+    pub fn gen_key(&self, rng: &mut SmallRng) -> Vec<u8> {
+        let mut key: Vec<u8> = Default::default();
         let key_slice: &mut [u8] = key.as_mut();
         rng.fill(key_slice);
         key
@@ -110,27 +110,27 @@ impl Opt {
 
 pub enum Cmd {
     Load {
-        key: [u8; 16],
+        key: Vec<u8>,
     },
     Create {
-        key: [u8; 16],
+        key: Vec<u8>,
     },
     Set {
-        key: [u8; 16],
+        key: Vec<u8>,
     },
     Delete {
-        key: [u8; 16],
+        key: Vec<u8>,
     },
     Get {
-        key: [u8; 16],
+        key: Vec<u8>,
     },
     Iter,
     Range {
-        low: Bound<[u8; 16]>,
-        high: Bound<[u8; 16]>,
+        low: Bound<Vec<u8>>,
+        high: Bound<Vec<u8>>,
     },
     Reverse {
-        low: Bound<[u8; 16]>,
-        high: Bound<[u8; 16]>,
+        low: Bound<Vec<u8>>,
+        high: Bound<Vec<u8>>,
     },
 }

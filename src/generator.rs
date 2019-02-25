@@ -8,7 +8,7 @@ use rand::{rngs::SmallRng, Rng, SeedableRng};
 
 use crate::opts::{Cmd, Opt};
 
-pub fn init_generators(opt: Opt, tx_idx: mpsc::Sender<Cmd>, tx_ref: mpsc::Sender<[u8; 16]>) {
+pub fn init_generators(opt: Opt, tx_idx: mpsc::Sender<Cmd>, tx_ref: mpsc::Sender<Vec<u8>>) {
     if opt.init_load() == 0 {
         return;
     }
@@ -32,7 +32,7 @@ fn init_generator(
     n: usize,
     opt: Opt,
     tx_idx: mpsc::Sender<Cmd>,
-    tx_ref: mpsc::Sender<[u8; 16]>,
+    tx_ref: mpsc::Sender<Vec<u8>>,
 ) {
     let start = SystemTime::now();
     let seed = opt.seed + ((n / id) as u128);
@@ -47,7 +47,7 @@ fn init_generator(
     println!("init-gen{}: {} items in {:?}", id, n, elapsed);
 }
 
-pub fn read_generator(id: i32, opt: Opt, tx: mpsc::Sender<Cmd>, refn: Llrb<[u8; 16], Vec<u8>>) {
+pub fn read_generator(id: i32, opt: Opt, tx: mpsc::Sender<Cmd>, refn: Llrb<Vec<u8>, Vec<u8>>) {
     let start = SystemTime::now();
     let mut rng = SmallRng::from_seed((opt.seed + 1).to_le_bytes());
 
@@ -87,7 +87,7 @@ pub fn read_generator(id: i32, opt: Opt, tx: mpsc::Sender<Cmd>, refn: Llrb<[u8; 
     println!("read-gen{}: {} items in {:?}", id, opt.read_load(), elapsed);
 }
 
-pub fn write_generator(opt: Opt, tx: mpsc::Sender<Cmd>, mut refn: Llrb<[u8; 16], Vec<u8>>) {
+pub fn write_generator(opt: Opt, tx: mpsc::Sender<Cmd>, mut refn: Llrb<Vec<u8>, Vec<u8>>) {
     let start = SystemTime::now();
     let mut rng = SmallRng::from_seed((opt.seed + 2).to_le_bytes());
 
@@ -122,10 +122,10 @@ pub fn write_generator(opt: Opt, tx: mpsc::Sender<Cmd>, mut refn: Llrb<[u8; 16],
 }
 
 fn random_low_high(
-    low: [u8; 16],
-    high: [u8; 16],
+    low: Vec<u8>,
+    high: Vec<u8>,
     rng: &mut SmallRng,
-) -> (Bound<[u8; 16]>, Bound<[u8; 16]>) {
+) -> (Bound<Vec<u8>>, Bound<Vec<u8>>) {
     let low = match rng.gen::<u8>() % 3 {
         0 => Bound::Included(low),
         1 => Bound::Excluded(low),
