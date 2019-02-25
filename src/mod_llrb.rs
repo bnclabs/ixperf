@@ -22,7 +22,7 @@ pub fn perf(opt: Opt) {
     let refn1 = Arc::clone(&refn);
     let reference = thread::spawn(move || {
         let refn1 = unsafe {
-            (Arc::into_raw(refn1) as *mut Llrb<Vec<u8>, Vec<u8>>)
+            (Arc::into_raw(refn1) as *mut Llrb<[u8; 16], Vec<u8>>)
                 .as_mut()
                 .unwrap()
         };
@@ -57,7 +57,7 @@ pub fn perf(opt: Opt) {
     generator_w.join().unwrap();
 }
 
-fn do_initial(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiver<Cmd>) {
+fn do_initial(opt: Opt, index: &mut Llrb<[u8; 16], Vec<u8>>, rx: mpsc::Receiver<Cmd>) {
     let mut latency = Latency::new();
     let start = SystemTime::now();
 
@@ -82,7 +82,9 @@ fn do_initial(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiver<C
     latency.print_latency("    ");
 }
 
-fn do_incremental(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiver<Cmd>) {
+fn do_incremental(opt: Opt, index: &mut Llrb<[u8; 16], Vec<u8>>, rx: mpsc::Receiver<Cmd>) {
+    thread::sleep(Duration::from_millis(1000));
+
     let mut op_stats = init_stats();
     let mut value: Vec<u8> = Vec::with_capacity(opt.valsize);
     value.resize(opt.valsize, 0xAD);
