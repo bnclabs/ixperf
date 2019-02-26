@@ -45,28 +45,16 @@ impl Latency {
         self.total += elapsed;
     }
 
-    pub fn percentiles(&self) -> [(i32, u128); 7] {
-        let total: usize = self.latencies.iter().map(|x| *x).sum();
-        let mut percentiles = [
-            (80, 0_u128),
-            (90, 0_u128),
-            (95, 0_u128),
-            (96, 0_u128),
-            (97, 0_u128),
-            (98, 0_u128),
-            (99, 0_u128),
-        ];
-        let mut iter = percentiles.iter_mut();
-        let mut item: &mut (i32, u128) = iter.next().unwrap();
-        let mut acc = 0;
-        for (latency, samples) in self.latencies.iter().enumerate() {
-            acc += samples;
-            if acc > (((total as f64) * ((item.0 as f64) / 100_f64)) as usize) {
-                item.1 = latency as u128;
-                match iter.next() {
-                    Some(x) => item = x,
-                    None => break,
-                }
+    pub fn percentiles(&self) -> Vec<(u8, u128)> {
+        let mut percentiles: Vec<(u8, u128)> = vec![];
+        let (mut acc, mut prev_perc) = (0_f64, 89_u8);
+        let iter = self.latencies.iter().enumerate().filter(|(_, &x)| x > 0);
+        for (latency, &samples) in iter {
+            acc += samples as f64;
+            let perc = ((acc / (self.samples as f64)) * 100_f64) as u8;
+            if perc > prev_perc {
+                percentiles.push((perc, latency as u128));
+                prev_perc = perc;
             }
         }
         percentiles
