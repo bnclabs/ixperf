@@ -11,7 +11,7 @@ use crate::stats;
 pub fn perf(opt: Opt) {
     println!("\n==== INITIAL LOAD ====");
     let mut index = Llrb::new("ixperf");
-    let refn = Arc::new(Llrb::new("reference"));
+    let refn: Arc<Llrb<Vec<u8>, Vec<u8>>> = Arc::new(Llrb::new("reference"));
     let (opt1, opt2) = (opt.clone(), opt.clone());
 
     let (tx_idx, rx_idx) = mpsc::channel();
@@ -37,6 +37,8 @@ pub fn perf(opt: Opt) {
 
     generator.join().unwrap();
     reference.join().unwrap();
+
+    println!("reference index loaded with {} items", refn.len());
 
     println!("\n==== INCREMENTAL LOAD ====");
     let refn1 = if let Ok(refn) = Arc::try_unwrap(refn) {
