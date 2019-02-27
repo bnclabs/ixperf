@@ -19,7 +19,7 @@ impl Latency {
             max: 0,
             latencies: Vec::with_capacity(10_000_000),
         };
-        lat.latencies.resize(100_000_000, 0);
+        lat.latencies.resize(10_000_000, 0);
         lat
     }
 
