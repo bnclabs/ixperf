@@ -37,6 +37,8 @@ fn init_generator(
     let start = SystemTime::now();
     let seed = opt.seed + ((n / id) as u128);
     let mut rng = SmallRng::from_seed(seed.to_le_bytes());
+    let mut key_print = Vec::with_capacity(opt.keysize);
+    key_print.resize(opt.keysize, b'0');
     for _ in 0..n {
         let key = opt.gen_key(&mut rng);
         let cmd = Cmd::Load { key: key.clone() };
@@ -99,6 +101,11 @@ pub fn write_generator(opt: Opt, tx: mpsc::SyncSender<Cmd>, mut refn: Llrb<Vec<u
     let (mut creates, mut sets, mut deletes) = (opt.creates, opt.sets, opt.deletes);
     let mut total = creates + sets + deletes;
     let empty_value: Vec<u8> = vec![];
+
+    if total == 0 {
+        return;
+    }
+
     while total > 0 {
         let r: usize = rng.gen::<usize>() % total;
         let cmd = if r < creates {

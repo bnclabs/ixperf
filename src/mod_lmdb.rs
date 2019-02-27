@@ -35,17 +35,20 @@ pub fn perf(opt: Opt) {
             refn1.set(item, value);
         }
         let _refn1 = unsafe { Arc::from_raw(refn1) };
-        println!("loaded {} in reference index", refn1.len());
     });
 
-    do_initial(opt2, rx_idx);
+    let dur = do_initial(opt2, rx_idx);
 
     generator.join().unwrap();
     reference.join().unwrap();
 
+    let (env, db) = open_lmdb(&opt, "lmdb");
+
+    let entries = env.stat().unwrap().entries();
+    println!("loaded ({},{}) items in {:?}", entries, refn.len(), dur);
+
     println!("\n==== INCREMENTAL LOAD ====");
     let refn = Arc::try_unwrap(refn).ok().unwrap();
-    let (env, db) = open_lmdb(&opt, "lmdb");
     let mut arc_env = Arc::new(env);
 
     // incremental writer
@@ -78,7 +81,7 @@ pub fn perf(opt: Opt) {
     unsafe { Arc::get_mut(&mut arc_env).unwrap().close_db(db) };
 }
 
-fn do_initial(opt: Opt, rx: mpsc::Receiver<Cmd>) {
+fn do_initial(opt: Opt, rx: mpsc::Receiver<Cmd>) -> Duration {
     let mut op_stats = stats::Ops::new();
     let start = SystemTime::now();
 
@@ -108,21 +111,18 @@ fn do_initial(opt: Opt, rx: mpsc::Receiver<Cmd>) {
                 txn = env.begin_rw_txn().unwrap();
             }
             if (opcount % crate::LOG_BATCH) == 0 {
-                opt.periodic_log(&op_stats)
+                opt.periodic_log(&op_stats, false /*fin*/)
             }
         }
     }
 
-    let entries = env.stat().unwrap().entries();
-    let (elapsed, len) = (start.elapsed().unwrap(), entries);
-    let rate = len / ((elapsed.as_nanos() / 1000_000_000) as usize);
-    let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
-    println!("loaded {} items in {:?} @ {} ops/sec", len, dur, rate);
+    let dur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
 
     unsafe { env.close_db(db) };
     env.sync(true).unwrap();
+    opt.periodic_log(&op_stats, true /*fin*/);
 
-    opt.periodic_log(&op_stats);
+    dur
 }
 
 fn do_writer(opt: Opt, env: Arc<lmdb::Environment>, db: lmdb::Database, rx: mpsc::Receiver<Cmd>) {
@@ -168,7 +168,7 @@ fn do_writer(opt: Opt, env: Arc<lmdb::Environment>, db: lmdb::Database, rx: mpsc
             _ => (),
         };
         if (opcount % crate::LOG_BATCH) == 0 {
-            opt.periodic_log(&op_stats)
+            opt.periodic_log(&op_stats, false /*fin*/)
         }
     }
 
@@ -179,7 +179,7 @@ fn do_writer(opt: Opt, env: Arc<lmdb::Environment>, db: lmdb::Database, rx: mpsc
 
     //unsafe { env.close_db(db) };
 
-    opt.periodic_log(&op_stats)
+    opt.periodic_log(&op_stats, true /*fin*/)
 }
 
 fn do_reader(
@@ -244,7 +244,7 @@ fn do_reader(
             _ => unreachable!(),
         };
         if (opcount % crate::LOG_BATCH) == 0 {
-            opt.periodic_log(&op_stats)
+            opt.periodic_log(&op_stats, false /*fin*/)
         }
     }
 
@@ -258,7 +258,7 @@ fn do_reader(
 
     //unsafe { env.close_db(db) };
 
-    opt.periodic_log(&op_stats);
+    opt.periodic_log(&op_stats, true /*fin*/);
 }
 
 fn init_lmdb(opt: &Opt, name: &str) -> (lmdb::Environment, lmdb::Database) {

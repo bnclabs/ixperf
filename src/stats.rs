@@ -10,9 +10,14 @@ pub struct Op {
 }
 
 impl Op {
-    fn pretty_print(&self, p: &str) {
+    fn pretty_print(&self, p: &str, fin: bool) {
         if self.count == 0 {
             return;
+        }
+
+        if fin == false {
+            self.latency.pretty_print(p);
+            return
         }
 
         let (c, i) = (self.count, self.items);
@@ -136,15 +141,15 @@ impl Ops {
         }
     }
 
-    pub fn pretty_print(&self, prefix: &str) {
-        self.load.pretty_print(prefix);
-        self.create.pretty_print(prefix);
-        self.set.pretty_print(prefix);
-        self.delete.pretty_print(prefix);
-        self.get.pretty_print(prefix);
-        self.iter.pretty_print(prefix);
-        self.range.pretty_print(prefix);
-        self.reverse.pretty_print(prefix);
+    pub fn pretty_print(&self, prefix: &str, fin: bool) {
+        self.load.pretty_print(prefix, fin);
+        self.create.pretty_print(prefix, fin);
+        self.set.pretty_print(prefix, fin);
+        self.delete.pretty_print(prefix, fin);
+        self.get.pretty_print(prefix, fin);
+        self.iter.pretty_print(prefix, fin);
+        self.range.pretty_print(prefix, fin);
+        self.reverse.pretty_print(prefix, fin);
     }
 
     pub fn json(&self) -> String {

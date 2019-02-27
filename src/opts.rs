@@ -76,12 +76,36 @@ impl Opt {
         Opt::from_args()
     }
 
+    //pub fn gen_key(&self, rng: &mut SmallRng) -> Vec<u8> {
+    //    let mut key: Vec<u8> = Vec::with_capacity(self.keysize);
+    //    key.resize(self.keysize, 0);
+    //    let key_slice: &mut [u8] = key.as_mut();
+    //    rng.fill(key_slice);
+    //    key
+    //}
+
     pub fn gen_key(&self, rng: &mut SmallRng) -> Vec<u8> {
-        let mut key: Vec<u8> = Vec::with_capacity(self.keysize);
-        key.resize(self.keysize, 0);
-        let key_slice: &mut [u8] = key.as_mut();
-        rng.fill(key_slice);
-        key
+        if self.keysize <= 20 {
+            self.gen_key32(rng)
+        } else {
+            self.gen_key64(rng)
+        }
+    }
+
+    pub fn gen_key32(&self, rng: &mut SmallRng) -> Vec<u8> {
+        let mut key_print = [b'0'; 1024];
+        let key = &mut key_print[..self.keysize];
+        let key_num = rng.gen::<u32>().to_string().into_bytes();
+        (&mut key[(self.keysize - key_num.len())..]).copy_from_slice(&key_num);
+        key.to_vec()
+    }
+
+    pub fn gen_key64(&self, rng: &mut SmallRng) -> Vec<u8> {
+        let mut key_print = [b'0'; 1024];
+        let key = &mut key_print[..self.keysize];
+        let key_num = rng.gen::<u64>().to_string().into_bytes();
+        (&mut key[(self.keysize - key_num.len())..]).copy_from_slice(&key_num);
+        key.to_vec()
     }
 
     #[allow(dead_code)]
@@ -110,11 +134,11 @@ impl Opt {
         self.creates + self.sets + self.deletes
     }
 
-    pub fn periodic_log(&self, op_stats: &stats::Ops) {
+    pub fn periodic_log(&self, op_stats: &stats::Ops, fin: bool) {
         if self.json {
             println!("{}", op_stats.json());
         } else {
-            op_stats.pretty_print("");
+            op_stats.pretty_print("", fin);
         }
     }
 }

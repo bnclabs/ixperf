@@ -41,7 +41,7 @@ impl Latency {
         if latency < ln {
             self.latencies[latency] += 1;
         } else {
-            self.latencies[ln-1] += 1;
+            self.latencies[ln - 1] += 1;
         }
         self.total += elapsed;
     }
@@ -75,7 +75,15 @@ impl Latency {
             Duration::from_nanos(self.mean() as u64),
             Duration::from_nanos(self.max as u64),
         );
-        println!("{}latency (min, avg, max): {:?}", prefix, arg1);
+        let rate = (self.samples as f64) / (self.total as f64 / 1_000_000_000.0);
+        println!(
+            "{}elapsed: {:.2?} samples: {} rate: {} op/s stats: {:?}",
+            prefix,
+            Duration::from_nanos(self.total as u64),
+            self.samples,
+            rate as u64,
+            arg1
+        );
         for (percentile, ns_cent) in self.percentiles().into_iter() {
             let ns = Duration::from_nanos((ns_cent * 100) as u64);
             println!("{}  {} percentile = {:?}", prefix, percentile, ns);
@@ -88,7 +96,11 @@ impl Latency {
             .into_iter()
             .map(|(p, ns)| format!(r#""{}": {}"#, p, (ns * 100)))
             .collect();
+        let rate = (self.samples as u128) / (self.total / 1_000_000_000);
         let strs = [
+            format!("samples: {}", self.samples),
+            format!("elapsed: {}", self.total),
+            format!("rate: {}", rate),
             format!("min: {}", self.min),
             format!("mean: {}", self.mean()),
             format!("max: {}", self.max),

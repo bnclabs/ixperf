@@ -14,6 +14,8 @@ pub fn perf(opt: Opt) {
     let refn: Arc<Llrb<Vec<u8>, Vec<u8>>> = Arc::new(Llrb::new("reference"));
     let (opt1, opt2) = (opt.clone(), opt.clone());
 
+    println!("node overhead for llrb: {}", index.stats().node_size());
+
     let (tx_idx, rx_idx) = mpsc::sync_channel(1000);
     let (tx_ref, rx_ref) = mpsc::sync_channel(1000);
 
@@ -33,12 +35,12 @@ pub fn perf(opt: Opt) {
         let _refn1 = unsafe { Arc::from_raw(refn1) };
     });
 
-    do_initial(opt2, &mut index, rx_idx);
+    let dur = do_initial(opt2, &mut index, rx_idx);
 
     generator.join().unwrap();
     reference.join().unwrap();
 
-    println!("reference index loaded with {} items", refn.len());
+    println!("loaded ({},{}) items in {:?}", index.len(), refn.len(), dur);
 
     println!("\n==== INCREMENTAL LOAD ====");
     let refn1 = if let Ok(refn) = Arc::try_unwrap(refn) {
@@ -59,7 +61,7 @@ pub fn perf(opt: Opt) {
     generator_w.join().unwrap();
 }
 
-fn do_initial(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiver<Cmd>) {
+fn do_initial(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiver<Cmd>) -> Duration {
     let mut op_stats = stats::Ops::new();
     let start = SystemTime::now();
 
@@ -72,23 +74,25 @@ fn do_initial(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiver<C
         match cmd {
             Cmd::Load { key } => {
                 op_stats.load.latency.start();
-                index.set(key, value.clone());
+                let value = index.set(key, value.clone());
                 op_stats.load.latency.stop();
                 op_stats.load.count += 1;
+                if value.is_some() {
+                    op_stats.load.items += 1;
+                }
             }
             _ => unreachable!(),
         };
         if (opcount % crate::LOG_BATCH) == 0 {
-            opt.periodic_log(&op_stats);
+            opt.periodic_log(&op_stats, false /*fin*/);
         }
     }
 
-    let (elapsed, len) = (start.elapsed().unwrap(), index.len());
-    let rate = len / ((elapsed.as_nanos() / 1000_000_000) as usize);
-    let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
-    println!("loaded {} items in {:?} @ {} ops/sec", len, dur, rate);
+    let dur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
 
-    opt.periodic_log(&op_stats)
+    opt.periodic_log(&op_stats, true);
+
+    dur
 }
 
 fn do_incremental(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiver<Cmd>) {
@@ -149,7 +153,7 @@ fn do_incremental(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiv
             _ => unreachable!(),
         };
         if (opcount % crate::LOG_BATCH) == 0 {
-            opt.periodic_log(&op_stats);
+            opt.periodic_log(&op_stats, false);
         }
     }
 
@@ -157,5 +161,5 @@ fn do_incremental(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiv
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
     println!("incr ops {} in {:?}, index-len: {}", opcount, dur, len);
 
-    opt.periodic_log(&op_stats);
+    opt.periodic_log(&op_stats, false);
 }
