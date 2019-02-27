@@ -49,9 +49,6 @@ pub struct Opt {
     #[structopt(long = "load", default_value = "10000000")]
     pub load: usize,
 
-    #[structopt(long = "creates", default_value = "1000000")]
-    pub creates: usize,
-
     #[structopt(long = "sets", default_value = "1000000")]
     pub sets: usize,
 
@@ -93,17 +90,19 @@ impl Opt {
     }
 
     pub fn gen_key32(&self, rng: &mut SmallRng) -> Vec<u8> {
+        let m = self.load as u32;
         let mut key_print = [b'0'; 1024];
         let key = &mut key_print[..self.keysize];
-        let key_num = rng.gen::<u32>().to_string().into_bytes();
+        let key_num = (rng.gen::<u32>() % m).to_string().into_bytes();
         (&mut key[(self.keysize - key_num.len())..]).copy_from_slice(&key_num);
         key.to_vec()
     }
 
     pub fn gen_key64(&self, rng: &mut SmallRng) -> Vec<u8> {
+        let m = self.load as u64;
         let mut key_print = [b'0'; 1024];
         let key = &mut key_print[..self.keysize];
-        let key_num = rng.gen::<u64>().to_string().into_bytes();
+        let key_num = (rng.gen::<u64>() % m).to_string().into_bytes();
         (&mut key[(self.keysize - key_num.len())..]).copy_from_slice(&key_num);
         key.to_vec()
     }
@@ -123,7 +122,7 @@ impl Opt {
 
     #[allow(dead_code)]
     pub fn incr_load(&self) -> usize {
-        self.creates + self.sets + self.deletes + self.gets + self.iters + self.ranges + self.revrs
+        self.sets + self.deletes + self.gets + self.iters + self.ranges + self.revrs
     }
 
     pub fn read_load(&self) -> usize {
@@ -131,7 +130,7 @@ impl Opt {
     }
 
     pub fn write_load(&self) -> usize {
-        self.creates + self.sets + self.deletes
+        self.sets + self.deletes
     }
 
     pub fn periodic_log(&self, op_stats: &stats::Ops, fin: bool) {
@@ -145,9 +144,6 @@ impl Opt {
 
 pub enum Cmd {
     Load {
-        key: Vec<u8>,
-    },
-    Create {
         key: Vec<u8>,
     },
     Set {

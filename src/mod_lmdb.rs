@@ -4,7 +4,6 @@ use std::sync::{mpsc, Arc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime};
 
-use llrb_index::Llrb;
 use lmdb::{self, Cursor, Transaction};
 
 use crate::generator::{init_generators, read_generator, write_generator};
@@ -15,49 +14,28 @@ const LMDB_BATCH: usize = 100_000;
 
 pub fn perf(opt: Opt) {
     println!("\n==== INITIAL LOAD ====");
-    let refn = Arc::new(Llrb::new("reference"));
     let (opt1, opt2) = (opt.clone(), opt.clone());
 
-    let (tx_idx, rx_idx) = mpsc::sync_channel(1000);
-    let (tx_ref, rx_ref) = mpsc::sync_channel(1000);
+    let (tx, rx) = mpsc::sync_channel(1000);
 
-    let generator = thread::spawn(move || init_generators(opt1, tx_idx, tx_ref));
-
-    let refn1 = Arc::clone(&refn);
-    let reference = thread::spawn(move || {
-        let refn1 = unsafe {
-            (Arc::into_raw(refn1) as *mut Llrb<Vec<u8>, Vec<u8>>)
-                .as_mut()
-                .unwrap()
-        };
-        for item in rx_ref {
-            let value: Vec<u8> = vec![];
-            refn1.set(item, value);
-        }
-        let _refn1 = unsafe { Arc::from_raw(refn1) };
-    });
-
-    let dur = do_initial(opt2, rx_idx);
-
+    let generator = thread::spawn(move || init_generators(opt1, tx));
+    let dur = do_initial(opt2, rx);
     generator.join().unwrap();
-    reference.join().unwrap();
 
     let (env, db) = open_lmdb(&opt, "lmdb");
 
     let entries = env.stat().unwrap().entries();
-    println!("loaded ({},{}) items in {:?}", entries, refn.len(), dur);
+    println!("loaded {} items in {:?}", entries, dur);
 
     println!("\n==== INCREMENTAL LOAD ====");
-    let refn = Arc::try_unwrap(refn).ok().unwrap();
     let mut arc_env = Arc::new(env);
 
     // incremental writer
     let mut threads: Vec<JoinHandle<()>> = vec![];
     let (tx, rx) = mpsc::sync_channel(1000);
     let (opt1, opt2) = (opt.clone(), opt.clone());
-    let refn1 = refn.clone();
     let w_env = Arc::clone(&arc_env);
-    let g = thread::spawn(move || write_generator(opt1, tx, refn1));
+    let g = thread::spawn(move || write_generator(opt1, tx));
     let w = thread::spawn(move || do_writer(opt2, w_env, db, rx));
     threads.push(g);
     threads.push(w);
@@ -66,9 +44,8 @@ pub fn perf(opt: Opt) {
     for i in 0..opt.readers {
         let (tx, rx) = mpsc::sync_channel(1000);
         let (opt1, opt2) = (opt.clone(), opt.clone());
-        let refn1 = refn.clone();
         let r_env = Arc::clone(&arc_env);
-        let g = thread::spawn(move || read_generator(i, opt1, tx, refn1));
+        let g = thread::spawn(move || read_generator(i, opt1, tx));
         let r = thread::spawn(move || do_reader(i, opt2, r_env, db, rx));
         threads.push(g);
         threads.push(r);
@@ -138,14 +115,6 @@ fn do_writer(opt: Opt, env: Arc<lmdb::Environment>, db: lmdb::Database, rx: mpsc
     for cmd in rx {
         opcount += 1;
         match cmd {
-            Cmd::Create { key } => {
-                op_stats.create.latency.start();
-                let mut txn = env.begin_rw_txn().unwrap();
-                txn.put(db, &key, &value, write_flags.clone()).unwrap();
-                txn.commit().unwrap();
-                op_stats.create.latency.stop();
-                op_stats.create.count += 1;
-            }
             Cmd::Set { key } => {
                 op_stats.set.latency.start();
                 let mut txn = env.begin_rw_txn().unwrap();
@@ -158,7 +127,9 @@ fn do_writer(opt: Opt, env: Arc<lmdb::Environment>, db: lmdb::Database, rx: mpsc
                 op_stats.delete.latency.start();
                 let mut txn = env.begin_rw_txn().unwrap();
                 match txn.del(db, &key, None /*data*/) {
-                    Ok(_) | Err(lmdb::Error::NotFound) => (),
+                    Ok(_) | Err(lmdb::Error::NotFound) => {
+                        op_stats.delete.items += 1;
+                    }
                     res @ _ => panic!("lmdb del: {:?}", res),
                 }
                 txn.commit().unwrap();

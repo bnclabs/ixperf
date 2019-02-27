@@ -3,12 +3,11 @@ use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::SystemTime;
 
-use llrb_index::Llrb;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 
 use crate::opts::{Cmd, Opt};
 
-pub fn init_generators(opt: Opt, tx_idx: mpsc::SyncSender<Cmd>, tx_ref: mpsc::SyncSender<Vec<u8>>) {
+pub fn init_generators(opt: Opt, tx: mpsc::SyncSender<Cmd>) {
     if opt.init_load() == 0 {
         return;
     }
@@ -16,10 +15,9 @@ pub fn init_generators(opt: Opt, tx_idx: mpsc::SyncSender<Cmd>, tx_ref: mpsc::Sy
     let mut hs: Vec<JoinHandle<()>> = vec![];
     let n = opt.init_load() / crate::NUM_GENERATORS;
     for id in 0..crate::NUM_GENERATORS {
-        let tx_idx1 = mpsc::SyncSender::clone(&tx_idx);
-        let tx_ref1 = mpsc::SyncSender::clone(&tx_ref);
+        let tx1 = mpsc::SyncSender::clone(&tx);
         let newopt = opt.clone();
-        let h = thread::spawn(move || init_generator(id + 1, n, newopt, tx_idx1, tx_ref1));
+        let h = thread::spawn(move || init_generator(id + 1, n, newopt, tx1));
         hs.push(h);
     }
     for h in hs.into_iter() {
@@ -27,34 +25,23 @@ pub fn init_generators(opt: Opt, tx_idx: mpsc::SyncSender<Cmd>, tx_ref: mpsc::Sy
     }
 }
 
-fn init_generator(
-    id: usize,
-    n: usize,
-    opt: Opt,
-    tx_idx: mpsc::SyncSender<Cmd>,
-    tx_ref: mpsc::SyncSender<Vec<u8>>,
-) {
+fn init_generator(id: usize, n: usize, opt: Opt, tx: mpsc::SyncSender<Cmd>) {
     let start = SystemTime::now();
     let seed = opt.seed + ((n / id) as u128);
     let mut rng = SmallRng::from_seed(seed.to_le_bytes());
     let mut key_print = Vec::with_capacity(opt.keysize);
     key_print.resize(opt.keysize, b'0');
     for _ in 0..n {
-        let key = opt.gen_key(&mut rng);
-        let cmd = Cmd::Load { key: key.clone() };
-        tx_idx.send(cmd).unwrap();
-        tx_ref.send(key).unwrap();
+        let cmd = Cmd::Load {
+            key: opt.gen_key(&mut rng),
+        };
+        tx.send(cmd).unwrap();
     }
     let elapsed = start.elapsed().unwrap();
     println!("init-gen{}: {} items in {:?}", id, n, elapsed);
 }
 
-pub fn read_generator(
-    id: usize,
-    opt: Opt,
-    tx: mpsc::SyncSender<Cmd>,
-    refn: Llrb<Vec<u8>, Vec<u8>>,
-) {
+pub fn read_generator(id: usize, opt: Opt, tx: mpsc::SyncSender<Cmd>) {
     let start = SystemTime::now();
     let mut rng = SmallRng::from_seed((opt.seed + 1).to_le_bytes());
 
@@ -64,22 +51,21 @@ pub fn read_generator(
         let r: usize = rng.gen::<usize>() % total;
         let cmd = if r < gets {
             gets -= 1;
-            let (key, _value) = refn.random(&mut rng).unwrap();
-            //println!("{:?}", key.capacity());
+            let key = opt.gen_key(&mut rng);
             Cmd::Get { key }
         } else if r < (gets + iters) {
             iters -= 1;
             Cmd::Iter
         } else if r < (gets + iters + ranges) {
             ranges -= 1;
-            let (low, _value) = refn.random(&mut rng).unwrap();
-            let (high, _value) = refn.random(&mut rng).unwrap();
+            let low = opt.gen_key(&mut rng);
+            let high = opt.gen_key(&mut rng);
             let (low, high) = random_low_high(low, high, &mut rng);
             Cmd::Range { low, high }
         } else if r < (gets + iters + ranges + revrs) {
             revrs -= 1;
-            let (low, _value) = refn.random(&mut rng).unwrap();
-            let (high, _value) = refn.random(&mut rng).unwrap();
+            let low = opt.gen_key(&mut rng);
+            let high = opt.gen_key(&mut rng);
             let (low, high) = random_low_high(low, high, &mut rng);
             Cmd::Reverse { low, high }
         } else {
@@ -94,13 +80,12 @@ pub fn read_generator(
     println!("read-gen{}: {} items in {:?}", id, opt.read_load(), elapsed);
 }
 
-pub fn write_generator(opt: Opt, tx: mpsc::SyncSender<Cmd>, mut refn: Llrb<Vec<u8>, Vec<u8>>) {
+pub fn write_generator(opt: Opt, tx: mpsc::SyncSender<Cmd>) {
     let start = SystemTime::now();
     let mut rng = SmallRng::from_seed((opt.seed + 2).to_le_bytes());
 
-    let (mut creates, mut sets, mut deletes) = (opt.creates, opt.sets, opt.deletes);
-    let mut total = creates + sets + deletes;
-    let empty_value: Vec<u8> = vec![];
+    let (mut sets, mut deletes) = (opt.sets, opt.deletes);
+    let mut total = sets + deletes;
 
     if total == 0 {
         return;
@@ -108,25 +93,22 @@ pub fn write_generator(opt: Opt, tx: mpsc::SyncSender<Cmd>, mut refn: Llrb<Vec<u
 
     while total > 0 {
         let r: usize = rng.gen::<usize>() % total;
-        let cmd = if r < creates {
-            creates -= 1;
-            let key = opt.gen_key(&mut rng);
-            refn.set(key.clone(), empty_value.clone());
-            Cmd::Create { key }
-        } else if r < (creates + sets) {
+        let cmd = if r < sets {
             sets -= 1;
-            let (key, _value) = refn.random(&mut rng).unwrap();
-            Cmd::Set { key }
-        } else if r < (creates + sets + deletes) {
+            Cmd::Set {
+                key: opt.gen_key(&mut rng),
+            }
+        } else if r < (sets + deletes) {
             deletes -= 1;
-            let (key, _value) = refn.random(&mut rng).unwrap();
-            Cmd::Delete { key }
+            Cmd::Delete {
+                key: opt.gen_key(&mut rng),
+            }
         } else {
             unreachable!();
         };
 
         tx.send(cmd).unwrap();
-        total = creates + sets + deletes;
+        total = sets + deletes;
     }
 
     let elapsed = start.elapsed().unwrap();
