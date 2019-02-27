@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use opts::Opt;
 
-const NUM_GENERATORS: usize = 4;
+const NUM_GENERATORS: usize = 1;
 const LOG_BATCH: usize = 1_000_000;
 
 fn main() {

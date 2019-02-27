@@ -14,8 +14,8 @@ pub fn perf(opt: Opt) {
     let refn = Arc::new(Llrb::new("reference"));
     let (opt1, opt2) = (opt.clone(), opt.clone());
 
-    let (tx_idx, rx_idx) = mpsc::channel();
-    let (tx_ref, rx_ref) = mpsc::channel();
+    let (tx_idx, rx_idx) = mpsc::sync_channel(1000);
+    let (tx_ref, rx_ref) = mpsc::sync_channel(1000);
 
     let generator = thread::spawn(move || init_generators(opt1, tx_idx, tx_ref));
 
@@ -47,8 +47,8 @@ pub fn perf(opt: Opt) {
     let refn2 = refn1.clone();
     let (opt1, opt2, opt3) = (opt.clone(), opt.clone(), opt.clone());
 
-    let (tx_r, rx) = mpsc::channel();
-    let tx_w = mpsc::Sender::clone(&tx_r);
+    let (tx_r, rx) = mpsc::sync_channel(1000);
+    let tx_w = mpsc::SyncSender::clone(&tx_r);
     let generator_r = thread::spawn(move || read_generator(1, opt1, tx_r, refn1));
     let generator_w = thread::spawn(move || write_generator(opt2, tx_w, refn2));
 
@@ -81,7 +81,7 @@ fn do_initial(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiver<C
         }
     }
 
-    let (elapsed, len) = (start.elapsed().unwrap(), index.count());
+    let (elapsed, len) = (start.elapsed().unwrap(), index.len());
     let rate = len / ((elapsed.as_nanos() / 1000_000_000) as usize);
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
     println!("loaded {} items in {:?} @ {} ops/sec", len, dur, rate);
@@ -151,7 +151,7 @@ fn do_incremental(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiv
         }
     }
 
-    let (elapsed, len) = (start.elapsed().unwrap(), index.count());
+    let (elapsed, len) = (start.elapsed().unwrap(), index.len());
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
     println!("incr ops {} in {:?}, index-len: {}", opcount, dur, len);
 

@@ -19,7 +19,7 @@ impl Latency {
             max: 0,
             latencies: Vec::with_capacity(10_000_000),
         };
-        lat.latencies.resize(10_000_000, 0);
+        lat.latencies.resize(100_000_000, 0);
         lat
     }
 
@@ -39,8 +39,6 @@ impl Latency {
         let latency = elapsed / 100;
         if latency < 10_000_000 {
             self.latencies[latency as usize] += 1;
-        } else {
-            panic!("latency larger than one second");
         }
         self.total += elapsed;
     }
@@ -61,7 +59,6 @@ impl Latency {
     }
 
     pub fn mean(&self) -> u128 {
-        println!("{}", self.samples);
         self.total / (self.samples as u128)
     }
 

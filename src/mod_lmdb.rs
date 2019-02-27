@@ -18,8 +18,8 @@ pub fn perf(opt: Opt) {
     let refn = Arc::new(Llrb::new("reference"));
     let (opt1, opt2) = (opt.clone(), opt.clone());
 
-    let (tx_idx, rx_idx) = mpsc::channel();
-    let (tx_ref, rx_ref) = mpsc::channel();
+    let (tx_idx, rx_idx) = mpsc::sync_channel(1000);
+    let (tx_ref, rx_ref) = mpsc::sync_channel(1000);
 
     let generator = thread::spawn(move || init_generators(opt1, tx_idx, tx_ref));
 
@@ -35,6 +35,7 @@ pub fn perf(opt: Opt) {
             refn1.set(item, value);
         }
         let _refn1 = unsafe { Arc::from_raw(refn1) };
+        println!("loaded {} in reference index", refn1.len());
     });
 
     do_initial(opt2, rx_idx);
@@ -43,29 +44,29 @@ pub fn perf(opt: Opt) {
     reference.join().unwrap();
 
     println!("\n==== INCREMENTAL LOAD ====");
-    let refn = if let Ok(refn) = Arc::try_unwrap(refn) {
-        refn
-    } else {
-        unreachable!();
-    };
+    let refn = Arc::try_unwrap(refn).ok().unwrap();
+    let (env, db) = open_lmdb(&opt, "lmdb");
+    let mut arc_env = Arc::new(env);
 
     // incremental writer
     let mut threads: Vec<JoinHandle<()>> = vec![];
-    let (tx, rx) = mpsc::channel();
+    let (tx, rx) = mpsc::sync_channel(1000);
     let (opt1, opt2) = (opt.clone(), opt.clone());
     let refn1 = refn.clone();
+    let w_env = Arc::clone(&arc_env);
     let g = thread::spawn(move || write_generator(opt1, tx, refn1));
-    let w = thread::spawn(move || do_writer(opt2, rx));
+    let w = thread::spawn(move || do_writer(opt2, w_env, db, rx));
     threads.push(g);
     threads.push(w);
 
     // incremental reader
-    for _i in 0..opt.readers {
-        let (tx, rx) = mpsc::channel();
+    for i in 0..opt.readers {
+        let (tx, rx) = mpsc::sync_channel(1000);
         let (opt1, opt2) = (opt.clone(), opt.clone());
         let refn1 = refn.clone();
-        let g = thread::spawn(move || read_generator(1, opt1, tx, refn1));
-        let r = thread::spawn(move || do_reader(opt2, rx));
+        let r_env = Arc::clone(&arc_env);
+        let g = thread::spawn(move || read_generator(i, opt1, tx, refn1));
+        let r = thread::spawn(move || do_reader(i, opt2, r_env, db, rx));
         threads.push(g);
         threads.push(r);
     }
@@ -73,19 +74,21 @@ pub fn perf(opt: Opt) {
     for t in threads.into_iter() {
         t.join().unwrap();
     }
+
+    unsafe { Arc::get_mut(&mut arc_env).unwrap().close_db(db) };
 }
 
 fn do_initial(opt: Opt, rx: mpsc::Receiver<Cmd>) {
     let mut op_stats = stats::Ops::new();
     let start = SystemTime::now();
 
-    let (mut env, db) = init_lmdb(&opt, "ixperf");
+    let (mut env, db) = init_lmdb(&opt, "lmdb");
 
     let mut value: Vec<u8> = Vec::with_capacity(opt.valsize);
     value.resize(opt.valsize, 0xAD);
 
     let write_flags: lmdb::WriteFlags = Default::default();
-    let mut opcount = 1;
+    let mut opcount = 0;
 
     {
         let mut txn = env.begin_rw_txn().unwrap();
@@ -117,18 +120,19 @@ fn do_initial(opt: Opt, rx: mpsc::Receiver<Cmd>) {
     println!("loaded {} items in {:?} @ {} ops/sec", len, dur, rate);
 
     unsafe { env.close_db(db) };
+    env.sync(true).unwrap();
 
     opt.periodic_log(&op_stats);
 }
 
-fn do_writer(opt: Opt, rx: mpsc::Receiver<Cmd>) {
+fn do_writer(opt: Opt, env: Arc<lmdb::Environment>, db: lmdb::Database, rx: mpsc::Receiver<Cmd>) {
     let mut op_stats = stats::Ops::new();
     let mut value: Vec<u8> = Vec::with_capacity(opt.valsize);
     value.resize(opt.valsize, 0xAD);
     let mut opcount = 0;
     let write_flags: lmdb::WriteFlags = Default::default();
 
-    let (mut env, db) = open_lmdb(&opt, "ixperf");
+    //let (mut env, db) = open_lmdb(&opt, "lmdb");
 
     let start = SystemTime::now();
     for cmd in rx {
@@ -173,16 +177,22 @@ fn do_writer(opt: Opt, rx: mpsc::Receiver<Cmd>) {
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
     println!("writer ops {} in {:?}, index-len: {}", opcount, dur, len);
 
-    unsafe { env.close_db(db) };
+    //unsafe { env.close_db(db) };
 
     opt.periodic_log(&op_stats)
 }
 
-fn do_reader(opt: Opt, rx: mpsc::Receiver<Cmd>) {
+fn do_reader(
+    n: usize,
+    opt: Opt,
+    env: Arc<lmdb::Environment>,
+    db: lmdb::Database,
+    rx: mpsc::Receiver<Cmd>,
+) {
     let mut op_stats = stats::Ops::new();
     let mut opcount = 0;
 
-    let (mut env, db) = open_lmdb(&opt, "ixperf");
+    //let (mut env, db) = open_lmdb(&opt, "lmdb");
 
     let start = SystemTime::now();
     for cmd in rx {
@@ -241,9 +251,12 @@ fn do_reader(opt: Opt, rx: mpsc::Receiver<Cmd>) {
     let entries = env.stat().unwrap().entries();
     let (elapsed, len) = (start.elapsed().unwrap(), entries);
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
-    println!("reader ops {} in {:?}, index-len: {}", opcount, dur, len);
+    println!(
+        "reader{} ops {} in {:?}, index-len: {}",
+        n, opcount, dur, len
+    );
 
-    unsafe { env.close_db(db) };
+    //unsafe { env.close_db(db) };
 
     opt.periodic_log(&op_stats);
 }
@@ -264,7 +277,8 @@ fn init_lmdb(opt: &Opt, name: &str) -> (lmdb::Environment, lmdb::Database) {
     flags.insert(lmdb::EnvironmentFlags::NO_META_SYNC);
     let env = lmdb::Environment::new()
         .set_flags(flags)
-        .set_map_size(150_000_000_000)
+        .set_map_size(10_000_000_000)
+        .set_max_readers(opt.readers as u32)
         .open(&path)
         .unwrap();
 
@@ -280,9 +294,11 @@ fn open_lmdb(opt: &Opt, name: &str) -> (lmdb::Environment, lmdb::Database) {
     let mut flags = lmdb::EnvironmentFlags::empty();
     flags.insert(lmdb::EnvironmentFlags::NO_SYNC);
     flags.insert(lmdb::EnvironmentFlags::NO_META_SYNC);
+    flags.insert(lmdb::EnvironmentFlags::NO_TLS);
     let env = lmdb::Environment::new()
         .set_flags(flags)
-        .set_map_size(150_000_000_000)
+        .set_map_size(10_000_000_000)
+        .set_max_readers(opt.readers as u32)
         .open(&path)
         .unwrap();
 
