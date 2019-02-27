@@ -18,8 +18,8 @@ pub fn perf(opt: Opt) {
     let refn = Arc::new(Llrb::new("reference"));
     let (opt1, opt2) = (opt.clone(), opt.clone());
 
-    let (tx_idx, rx_idx) = mpsc::channel();
-    let (tx_ref, rx_ref) = mpsc::channel();
+    let (tx_idx, rx_idx) = mpsc::sync_channel(1000);
+    let (tx_ref, rx_ref) = mpsc::sync_channel(1000);
 
     let generator = thread::spawn(move || init_generators(opt1, tx_idx, tx_ref));
 
@@ -50,7 +50,7 @@ pub fn perf(opt: Opt) {
 
     // incremental writer
     let mut threads: Vec<JoinHandle<()>> = vec![];
-    let (tx, rx) = mpsc::channel();
+    let (tx, rx) = mpsc::sync_channel(1000);
     let (opt1, opt2) = (opt.clone(), opt.clone());
     let refn1 = refn.clone();
     let w_env = Arc::clone(&arc_env);
@@ -61,7 +61,7 @@ pub fn perf(opt: Opt) {
 
     // incremental reader
     for i in 0..opt.readers {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::sync_channel(1000);
         let (opt1, opt2) = (opt.clone(), opt.clone());
         let refn1 = refn.clone();
         let r_env = Arc::clone(&arc_env);

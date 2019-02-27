@@ -14,8 +14,8 @@ pub fn perf(opt: Opt) {
     let refn: Arc<Llrb<Vec<u8>, Vec<u8>>> = Arc::new(Llrb::new("reference"));
     let (opt1, opt2) = (opt.clone(), opt.clone());
 
-    let (tx_idx, rx_idx) = mpsc::channel();
-    let (tx_ref, rx_ref) = mpsc::channel();
+    let (tx_idx, rx_idx) = mpsc::sync_channel(1000);
+    let (tx_ref, rx_ref) = mpsc::sync_channel(1000);
 
     let generator = thread::spawn(move || init_generators(opt1, tx_idx, tx_ref));
 
@@ -49,8 +49,8 @@ pub fn perf(opt: Opt) {
     let refn2 = refn1.clone();
     let (opt1, opt2, opt3) = (opt.clone(), opt.clone(), opt.clone());
 
-    let (tx_r, rx) = mpsc::channel();
-    let tx_w = mpsc::Sender::clone(&tx_r);
+    let (tx_r, rx) = mpsc::sync_channel(1000);
+    let tx_w = mpsc::SyncSender::clone(&tx_r);
     let generator_r = thread::spawn(move || read_generator(1, opt1, tx_r, refn1));
     let generator_w = thread::spawn(move || write_generator(opt2, tx_w, refn2));
 

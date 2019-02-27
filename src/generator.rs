@@ -8,7 +8,7 @@ use rand::{rngs::SmallRng, Rng, SeedableRng};
 
 use crate::opts::{Cmd, Opt};
 
-pub fn init_generators(opt: Opt, tx_idx: mpsc::Sender<Cmd>, tx_ref: mpsc::Sender<Vec<u8>>) {
+pub fn init_generators(opt: Opt, tx_idx: mpsc::SyncSender<Cmd>, tx_ref: mpsc::SyncSender<Vec<u8>>) {
     if opt.init_load() == 0 {
         return;
     }
@@ -16,8 +16,8 @@ pub fn init_generators(opt: Opt, tx_idx: mpsc::Sender<Cmd>, tx_ref: mpsc::Sender
     let mut hs: Vec<JoinHandle<()>> = vec![];
     let n = opt.init_load() / crate::NUM_GENERATORS;
     for id in 0..crate::NUM_GENERATORS {
-        let tx_idx1 = mpsc::Sender::clone(&tx_idx);
-        let tx_ref1 = mpsc::Sender::clone(&tx_ref);
+        let tx_idx1 = mpsc::SyncSender::clone(&tx_idx);
+        let tx_ref1 = mpsc::SyncSender::clone(&tx_ref);
         let newopt = opt.clone();
         let h = thread::spawn(move || init_generator(id + 1, n, newopt, tx_idx1, tx_ref1));
         hs.push(h);
@@ -31,8 +31,8 @@ fn init_generator(
     id: usize,
     n: usize,
     opt: Opt,
-    tx_idx: mpsc::Sender<Cmd>,
-    tx_ref: mpsc::Sender<Vec<u8>>,
+    tx_idx: mpsc::SyncSender<Cmd>,
+    tx_ref: mpsc::SyncSender<Vec<u8>>,
 ) {
     let start = SystemTime::now();
     let seed = opt.seed + ((n / id) as u128);
@@ -50,7 +50,7 @@ fn init_generator(
 pub fn read_generator(
     id: usize,
     opt: Opt,
-    tx: mpsc::Sender<Cmd>,
+    tx: mpsc::SyncSender<Cmd>,
     refn: Llrb<Vec<u8>, Vec<u8>>,
 ) {
     let start = SystemTime::now();
@@ -92,7 +92,7 @@ pub fn read_generator(
     println!("read-gen{}: {} items in {:?}", id, opt.read_load(), elapsed);
 }
 
-pub fn write_generator(opt: Opt, tx: mpsc::Sender<Cmd>, mut refn: Llrb<Vec<u8>, Vec<u8>>) {
+pub fn write_generator(opt: Opt, tx: mpsc::SyncSender<Cmd>, mut refn: Llrb<Vec<u8>, Vec<u8>>) {
     let start = SystemTime::now();
     let mut rng = SmallRng::from_seed((opt.seed + 2).to_le_bytes());
 
