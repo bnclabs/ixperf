@@ -17,9 +17,9 @@ impl Latency {
             start: SystemTime::now(),
             min: 0,
             max: 0,
-            latencies: Vec::with_capacity(10_000_000),
+            latencies: Vec::with_capacity(1_000_000),
         };
-        lat.latencies.resize(10_000_000, 0);
+        lat.latencies.resize(1_000_000, 0);
         lat
     }
 
@@ -36,9 +36,12 @@ impl Latency {
         if self.min == 0 || elapsed > self.max {
             self.max = elapsed
         }
-        let latency = elapsed / 100;
-        if latency < 10_000_000 {
-            self.latencies[latency as usize] += 1;
+        let latency = (elapsed / 100) as usize;
+        let ln = self.latencies.len();
+        if latency < ln {
+            self.latencies[latency] += 1;
+        } else {
+            self.latencies[ln-1] += 1;
         }
         self.total += elapsed;
     }
