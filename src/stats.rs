@@ -17,7 +17,7 @@ impl Op {
 
         if fin == false {
             self.latency.pretty_print(p);
-            return
+            return;
         }
 
         let (c, i) = (self.count, self.items);
@@ -163,12 +163,16 @@ impl Ops {
             self.range.json(),
             self.reverse.json(),
         ];
-        let strs: Vec<String> = strs.iter().filter_map(|item| {
-            if item.len() > 0 {
-                Some(item.clone())
-            } else {
-                None
-            }).collect();
+        let strs: Vec<String> = strs
+            .iter()
+            .filter_map(|item| {
+                if item.len() > 0 {
+                    Some(item.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
         ("stats { ".to_string() + &strs.join(", ") + " }").to_string()
     }
 }
