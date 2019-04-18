@@ -1,7 +1,7 @@
 mod generator;
 mod latency;
 mod mod_llrb;
-mod mod_lmdb;
+//mod mod_lmdb;
 mod opts;
 mod stats;
 
@@ -19,7 +19,7 @@ fn main() {
 
     match opt.index.as_str() {
         "llrb" => mod_llrb::perf(opt),
-        "lmdb" => mod_lmdb::perf(opt),
+        //"lmdb" => mod_lmdb::perf(opt),
         index @ _ => panic!("invalid index {}", index),
     }
 }

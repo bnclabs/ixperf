@@ -1,22 +1,10 @@
-use std::fmt::{self, Display};
 use std::ops::Bound;
 
 use rand::{rngs::SmallRng, Rng};
 use structopt::StructOpt;
 
+use crate::generator::RandomKV;
 use crate::stats;
-
-#[derive(Debug)]
-#[allow(dead_code)]
-pub enum Error {
-    TypeError(String),
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?})", self)
-    }
-}
 
 #[derive(Debug, StructOpt, Clone)]
 pub struct Opt {
@@ -24,6 +12,9 @@ pub struct Opt {
 
     #[structopt(long = "path", default_value = "/tmp/ixperf")]
     pub path: String,
+
+    #[structopt(long = "type", default_value = "u64")]
+    pub typ: String,
 
     #[structopt(long = "key-size", default_value = "16")]
     pub keysize: usize,
@@ -73,58 +64,6 @@ impl Opt {
         Opt::from_args()
     }
 
-    //pub fn gen_key(&self, rng: &mut SmallRng) -> Vec<u8> {
-    //    let mut key: Vec<u8> = Vec::with_capacity(self.keysize);
-    //    key.resize(self.keysize, 0);
-    //    let key_slice: &mut [u8] = key.as_mut();
-    //    rng.fill(key_slice);
-    //    key
-    //}
-
-    pub fn gen_key(&self, rng: &mut SmallRng) -> Vec<u8> {
-        if self.keysize <= 20 {
-            self.gen_key32(rng)
-        } else {
-            self.gen_key64(rng)
-        }
-    }
-
-    pub fn gen_key32(&self, rng: &mut SmallRng) -> Vec<u8> {
-        let m = self.load as u32;
-        let mut key_print = [b'0'; 1024];
-        let key = &mut key_print[..self.keysize];
-        let key_num = (rng.gen::<u32>() % m).to_string().into_bytes();
-        (&mut key[(self.keysize - key_num.len())..]).copy_from_slice(&key_num);
-        key.to_vec()
-    }
-
-    pub fn gen_key64(&self, rng: &mut SmallRng) -> Vec<u8> {
-        let m = self.load as u64;
-        let mut key_print = [b'0'; 1024];
-        let key = &mut key_print[..self.keysize];
-        let key_num = (rng.gen::<u64>() % m).to_string().into_bytes();
-        (&mut key[(self.keysize - key_num.len())..]).copy_from_slice(&key_num);
-        key.to_vec()
-    }
-
-    #[allow(dead_code)]
-    pub fn gen_value(&mut self, rng: &mut SmallRng) -> Vec<u8> {
-        let mut val: Vec<u8> = Vec::with_capacity(self.valsize);
-        val.resize(self.valsize, 0);
-        let val_slice: &mut [u8] = val.as_mut();
-        rng.fill(val_slice);
-        val
-    }
-
-    pub fn init_load(&self) -> usize {
-        self.load
-    }
-
-    #[allow(dead_code)]
-    pub fn incr_load(&self) -> usize {
-        self.sets + self.deletes + self.gets + self.iters + self.ranges + self.revrs
-    }
-
     pub fn read_load(&self) -> usize {
         self.gets + self.iters + self.ranges + self.revrs
     }
@@ -142,26 +81,68 @@ impl Opt {
     }
 }
 
-pub enum Cmd {
-    Load {
-        key: Vec<u8>,
-    },
-    Set {
-        key: Vec<u8>,
-    },
-    Delete {
-        key: Vec<u8>,
-    },
-    Get {
-        key: Vec<u8>,
-    },
+pub enum Cmd<K> {
+    Load { key: K, value: K },
+    Set { key: K, value: K },
+    Delete { key: K },
+    Get { key: K },
     Iter,
-    Range {
-        low: Bound<Vec<u8>>,
-        high: Bound<Vec<u8>>,
-    },
-    Reverse {
-        low: Bound<Vec<u8>>,
-        high: Bound<Vec<u8>>,
-    },
+    Range { low: Bound<K>, high: Bound<K> },
+    Reverse { low: Bound<K>, high: Bound<K> },
+}
+
+impl<K> Cmd<K>
+where
+    K: RandomKV,
+{
+    pub fn generate_load(rng: &mut SmallRng, opt: &Opt, k: &K) -> Cmd<K> {
+        Cmd::Load {
+            key: k.generate_key(rng, opt),
+            value: k.generate_value(rng, opt),
+        }
+    }
+
+    pub fn generate_set(rng: &mut SmallRng, opt: &Opt, k: &K) -> Cmd<K> {
+        Cmd::Set {
+            key: k.generate_key(rng, opt),
+            value: k.generate_value(rng, opt),
+        }
+    }
+
+    pub fn generate_delete(rng: &mut SmallRng, opt: &Opt, k: &K) -> Cmd<K> {
+        Cmd::Delete {
+            key: k.generate_key(rng, opt),
+        }
+    }
+
+    pub fn generate_get(rng: &mut SmallRng, opt: &Opt, k: &K) -> Cmd<K> {
+        Cmd::Get {
+            key: k.generate_key(rng, opt),
+        }
+    }
+
+    pub fn generate_iter(_rng: &mut SmallRng, _opt: &Opt, _k: &K) -> Cmd<K> {
+        Cmd::Iter
+    }
+
+    pub fn generate_range(rng: &mut SmallRng, opt: &Opt, k: &K) -> Cmd<K> {
+        let low = bounded_key(k.generate_key(rng, opt), rng);
+        let high = bounded_key(k.generate_key(rng, opt), rng);
+        Cmd::Range { low, high }
+    }
+
+    pub fn generate_reverse(rng: &mut SmallRng, opt: &Opt, k: &K) -> Cmd<K> {
+        let low = bounded_key(k.generate_key(rng, opt), rng);
+        let high = bounded_key(k.generate_key(rng, opt), rng);
+        Cmd::Reverse { low, high }
+    }
+}
+
+fn bounded_key<T>(key: T, rng: &mut SmallRng) -> Bound<T> {
+    match rng.gen::<u8>() % 3 {
+        0 => Bound::Included(key),
+        1 => Bound::Excluded(key),
+        2 => Bound::Unbounded,
+        _ => unreachable!(),
+    }
 }

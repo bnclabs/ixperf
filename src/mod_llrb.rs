@@ -4,108 +4,127 @@ use std::time::{Duration, SystemTime};
 
 use llrb_index::Llrb;
 
+use crate::generator::RandomKV;
 use crate::generator::{init_generators, read_generator, write_generator};
 use crate::opts::{Cmd, Opt};
 use crate::stats;
 
 pub fn perf(opt: Opt) {
-    println!("\n==== INITIAL LOAD ====");
-    let mut index = Llrb::new("ixperf");
-    let (opt1, opt2) = (opt.clone(), opt.clone());
+    match opt.typ.as_str() {
+        "u32" => perf_u32(opt),
+        "u64" => perf_u64(opt),
+        _ => panic!("unsupported type {}", opt.typ),
+    }
+}
 
+pub fn perf_u32(opt: Opt) {
+    let mut index: Llrb<u32, u32> = Llrb::new("ixperf");
+
+    println!("\n==== INITIAL LOAD for type u32 ====");
     println!("node overhead for llrb: {}", index.stats().node_size());
 
+    let optt = opt.clone();
     let (tx, rx) = mpsc::sync_channel(1000);
-
-    let generator = thread::spawn(move || init_generators(opt1, tx));
-    let dur = do_initial(opt2, &mut index, rx);
+    let generator = thread::spawn(move || init_generators(optt, tx));
+    do_init(opt.clone(), &mut index, rx);
     generator.join().unwrap();
 
-    println!("loaded {} items in {:?}", index.len(), dur);
-
-    println!("\n==== INCREMENTAL LOAD ====");
-    let (opt1, opt2, opt3) = (opt.clone(), opt.clone(), opt.clone());
+    println!("\n==== INCREMENTAL LOAD for type u32 ====");
+    let (optr, optw) = (opt.clone(), opt.clone());
 
     let (tx_r, rx) = mpsc::sync_channel(1000);
     let tx_w = mpsc::SyncSender::clone(&tx_r);
-    let generator_r = thread::spawn(move || read_generator(1, opt1, tx_r));
-    let generator_w = thread::spawn(move || write_generator(opt2, tx_w));
-
-    do_incremental(opt3, &mut index, rx);
+    let generator_r = thread::spawn(move || read_generator(1, optr, tx_r));
+    let generator_w = thread::spawn(move || write_generator(optw, tx_w));
+    do_incr(opt.clone(), &mut index, rx);
     generator_r.join().unwrap();
     generator_w.join().unwrap();
 }
 
-fn do_initial(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiver<Cmd>) -> Duration {
+pub fn perf_u64(opt: Opt) {
+    let mut index: Llrb<u64, u64> = Llrb::new("ixperf");
+
+    println!("\n==== INITIAL LOAD for type u64 ====");
+    println!("node overhead for llrb: {}", index.stats().node_size());
+
+    let optt = opt.clone();
+    let (tx, rx) = mpsc::sync_channel(1000);
+    let generator = thread::spawn(move || init_generators(optt, tx));
+    do_init(opt.clone(), &mut index, rx);
+    generator.join().unwrap();
+
+    println!("\n==== INCREMENTAL LOAD for type u64 ====");
+    let (optr, optw) = (opt.clone(), opt.clone());
+
+    let (tx_r, rx) = mpsc::sync_channel(1000);
+    let tx_w = mpsc::SyncSender::clone(&tx_r);
+    let generator_r = thread::spawn(move || read_generator(1, optr, tx_r));
+    let generator_w = thread::spawn(move || write_generator(optw, tx_w));
+    do_incr(opt.clone(), &mut index, rx);
+    generator_r.join().unwrap();
+    generator_w.join().unwrap();
+}
+
+fn do_init<T>(opt: Opt, index: &mut Llrb<T, T>, rx: mpsc::Receiver<Cmd<T>>)
+where
+    T: RandomKV + Clone + Ord,
+{
     let mut op_stats = stats::Ops::new();
-    let start = SystemTime::now();
-
-    let mut value: Vec<u8> = Vec::with_capacity(opt.valsize);
-    value.resize(opt.valsize, 0xAD);
-
-    let mut opcount = 0;
+    let (start, mut opcount) = (SystemTime::now(), 0);
     for cmd in rx {
-        opcount += 1;
         match cmd {
-            Cmd::Load { key } => {
+            Cmd::Load { key, value } => {
                 op_stats.load.latency.start();
-                let value = index.set(key, value.clone());
-                op_stats.load.latency.stop();
-                op_stats.load.count += 1;
-                if value.is_some() {
+                if index.set(key, value).is_some() {
                     op_stats.load.items += 1;
                 }
+                op_stats.load.latency.stop();
+                op_stats.load.count += 1;
             }
             _ => unreachable!(),
         };
+        opcount += 1;
         if (opcount % crate::LOG_BATCH) == 0 {
             opt.periodic_log(&op_stats, false /*fin*/);
         }
     }
-
     let dur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
 
     opt.periodic_log(&op_stats, true);
-
-    dur
+    println!("init ops {} items in {:?}", index.len(), dur);
 }
 
-fn do_incremental(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiver<Cmd>) {
+fn do_incr<T>(opt: Opt, index: &mut Llrb<T, T>, rx: mpsc::Receiver<Cmd<T>>)
+where
+    T: RandomKV + Clone + Ord,
+{
     let mut op_stats = stats::Ops::new();
-    let mut value: Vec<u8> = Vec::with_capacity(opt.valsize);
-    value.resize(opt.valsize, 0xAD);
-    let mut opcount = 0;
-
-    let start = SystemTime::now();
+    let (start, mut opcount) = (SystemTime::now(), 0);
     for cmd in rx {
-        opcount += 1;
         match cmd {
-            Cmd::Set { key } => {
+            Cmd::Set { key, value } => {
                 op_stats.set.latency.start();
-                let value = index.set(key, value.clone());
-                op_stats.set.latency.stop();
-                op_stats.set.count += 1;
-                if value.is_none() {
+                if index.set(key, value.clone()).is_some() {
                     op_stats.set.items += 1;
                 }
+                op_stats.set.latency.stop();
+                op_stats.set.count += 1;
             }
             Cmd::Delete { key } => {
                 op_stats.delete.latency.start();
-                let value = index.delete(&key);
-                op_stats.delete.latency.stop();
-                op_stats.delete.count += 1;
-                if value.is_none() {
+                if index.delete(&key).is_none() {
                     op_stats.delete.items += 1;
                 }
+                op_stats.delete.latency.stop();
+                op_stats.delete.count += 1;
             }
             Cmd::Get { key } => {
                 op_stats.get.latency.start();
-                let value = index.get(&key);
-                op_stats.get.latency.stop();
-                op_stats.get.count += 1;
-                if value.is_none() {
+                if index.get(&key).is_none() {
                     op_stats.get.items += 1;
                 }
+                op_stats.get.latency.stop();
+                op_stats.get.count += 1;
             }
             Cmd::Iter => {
                 let iter = index.iter();
@@ -130,14 +149,13 @@ fn do_incremental(opt: Opt, index: &mut Llrb<Vec<u8>, Vec<u8>>, rx: mpsc::Receiv
             }
             _ => unreachable!(),
         };
+        opcount += 1;
         if (opcount % crate::LOG_BATCH) == 0 {
             opt.periodic_log(&op_stats, false);
         }
     }
-
     let (elapsed, len) = (start.elapsed().unwrap(), index.len());
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
-    println!("incr ops {} in {:?}, index-len: {}", opcount, dur, len);
-
     opt.periodic_log(&op_stats, true);
+    println!("incr ops {} in {:?}, index-len: {}", opcount, dur, len);
 }

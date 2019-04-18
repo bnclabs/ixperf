@@ -77,7 +77,7 @@ impl Latency {
         );
         let rate = (self.samples as f64) / (self.total as f64 / 1_000_000_000.0);
         println!(
-            "{}elapsed: {:.2?} samples: {} rate: {} op/s stats: {:?}",
+            "{}elapsed: {:.2?} samples: {} rate: {} ops/s\nstats: {:?}",
             prefix,
             Duration::from_nanos(self.total as u64),
             self.samples,
