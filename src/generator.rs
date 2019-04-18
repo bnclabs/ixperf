@@ -31,16 +31,6 @@ impl RandomKV for u64 {
     }
 }
 
-impl RandomKV for f64 {
-    fn generate_key(&self, rng: &mut SmallRng, _opt: &Opt) -> f64 {
-        rng.gen()
-    }
-
-    fn generate_value(&self, rng: &mut SmallRng, _opt: &Opt) -> f64 {
-        rng.gen()
-    }
-}
-
 impl RandomKV for [u8; 32] {
     fn generate_key(&self, rng: &mut SmallRng, _opt: &Opt) -> [u8; 32] {
         let mut arr = [0_u8; 32];

@@ -9,18 +9,13 @@ use crate::generator::{init_generators, read_generator, write_generator};
 use crate::opts::{Cmd, Opt};
 use crate::stats;
 
-pub fn perf(opt: Opt) {
-    match opt.typ.as_str() {
-        "u32" => perf_u32(opt),
-        "u64" => perf_u64(opt),
-        _ => panic!("unsupported type {}", opt.typ),
-    }
-}
+pub fn perf<T>(opt: Opt)
+where
+    T: RandomKV + Clone + Ord + Default + Send + 'static,
+{
+    let mut index: Llrb<T, T> = Llrb::new("ixperf");
 
-pub fn perf_u32(opt: Opt) {
-    let mut index: Llrb<u32, u32> = Llrb::new("ixperf");
-
-    println!("\n==== INITIAL LOAD for type u32 ====");
+    println!("\n==== INITIAL LOAD for type {} ====", opt.typ);
     println!("node overhead for llrb: {}", index.stats().node_size());
 
     let optt = opt.clone();
@@ -29,31 +24,7 @@ pub fn perf_u32(opt: Opt) {
     do_init(opt.clone(), &mut index, rx);
     generator.join().unwrap();
 
-    println!("\n==== INCREMENTAL LOAD for type u32 ====");
-    let (optr, optw) = (opt.clone(), opt.clone());
-
-    let (tx_r, rx) = mpsc::sync_channel(1000);
-    let tx_w = mpsc::SyncSender::clone(&tx_r);
-    let generator_r = thread::spawn(move || read_generator(1, optr, tx_r));
-    let generator_w = thread::spawn(move || write_generator(optw, tx_w));
-    do_incr(opt.clone(), &mut index, rx);
-    generator_r.join().unwrap();
-    generator_w.join().unwrap();
-}
-
-pub fn perf_u64(opt: Opt) {
-    let mut index: Llrb<u64, u64> = Llrb::new("ixperf");
-
-    println!("\n==== INITIAL LOAD for type u64 ====");
-    println!("node overhead for llrb: {}", index.stats().node_size());
-
-    let optt = opt.clone();
-    let (tx, rx) = mpsc::sync_channel(1000);
-    let generator = thread::spawn(move || init_generators(optt, tx));
-    do_init(opt.clone(), &mut index, rx);
-    generator.join().unwrap();
-
-    println!("\n==== INCREMENTAL LOAD for type u64 ====");
+    println!("\n==== INCREMENTAL LOAD for type {} ====", opt.typ);
     let (optr, optw) = (opt.clone(), opt.clone());
 
     let (tx_r, rx) = mpsc::sync_channel(1000);

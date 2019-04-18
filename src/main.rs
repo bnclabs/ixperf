@@ -17,10 +17,13 @@ fn main() {
     make_seed(&mut opt);
     println!("starting with seed = {}", opt.seed);
 
-    match opt.index.as_str() {
-        "llrb" => mod_llrb::perf(opt),
+    match (opt.index.as_str(), opt.typ.as_str()) {
+        ("llrb", "u32") => mod_llrb::perf::<u32>(opt),
+        ("llrb", "u64") => mod_llrb::perf::<u64>(opt),
+        ("llrb", "array") => mod_llrb::perf::<[u8; 32]>(opt),
+        ("llrb", "vector") => mod_llrb::perf::<Vec<u8>>(opt),
         //"lmdb" => mod_lmdb::perf(opt),
-        index @ _ => panic!("invalid index {}", index),
+        _ => panic!("unsupported inded/type {}/{}", opt.index, opt.typ),
     }
 }
 
