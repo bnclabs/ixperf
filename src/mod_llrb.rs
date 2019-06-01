@@ -112,7 +112,7 @@ where
                 op_stats.range.count += 1;
             }
             Cmd::Reverse { low, high } => {
-                let iter = index.range((low, high)).rev();
+                let iter = index.reverse((low, high));
                 op_stats.reverse.latency.start();
                 iter.for_each(|_| op_stats.reverse.items += 1);
                 op_stats.reverse.latency.stop();
