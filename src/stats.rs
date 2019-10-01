@@ -175,4 +175,15 @@ impl Ops {
             .collect();
         ("stats { ".to_string() + &strs.join(", ") + " }").to_string()
     }
+
+    pub fn total_ops(&self) -> usize {
+        self.load.count
+            + self.create.count
+            + self.set.count
+            + self.delete.count
+            + self.get.count
+            + self.iter.count
+            + self.range.count
+            + self.reverse.count
+    }
 }
