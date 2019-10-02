@@ -28,7 +28,7 @@ fn main() {
     println!("starting with seed = {}", p.seed);
 
     match p.index.as_str() {
-        "llrb" => do_llrb_index(p),
+        "llrb-index" => do_llrb_index(p),
         "bogn-llrb" => do_bogn_llrb(p),
         _ => panic!("unsupported index-type {}", p.index),
     }
@@ -136,20 +136,38 @@ impl Default for Profile {
     }
 }
 
+impl From<Opt> for Profile {
+    fn from(opt: Opt) -> Profile {
+        let mut p: Profile = if opt.profile == "" {
+            Default::default()
+        } else {
+            match std::fs::read(opt.profile) {
+                Ok(text) => {
+                    let text = std::str::from_utf8(&text).unwrap();
+                    let toml_value: toml::Value = text.parse().unwrap();
+                    toml_value.into()
+                }
+                Err(err) => panic!(err),
+            }
+        };
+        if opt.seed > 0 {
+            p.seed = opt.seed;
+        }
+        p
+    }
+}
+
 impl From<toml::Value> for Profile {
     fn from(value: toml::Value) -> Profile {
         let mut p: Profile = Default::default();
-        for (name, value) in value.as_table().unwrap().iter() {
+
+        // common profile
+        let section = &value["ixperf"];
+        for (name, value) in section.as_table().unwrap().iter() {
             match name.as_str() {
                 "index" => p.index = value.as_str().unwrap().to_string(),
                 "key_type" => p.key_type = value.as_str().unwrap().to_string(),
                 "value_type" => p.val_type = value.as_str().unwrap().to_string(),
-                "path" => {
-                    p.path = {
-                        let path: &ffi::OsStr = value.as_str().unwrap().as_ref();
-                        path.to_os_string()
-                    }
-                }
                 "key_size" => {
                     p.key_size = value.as_integer().unwrap().try_into().unwrap();
                 }
@@ -157,15 +175,8 @@ impl From<toml::Value> for Profile {
                     p.val_size = value.as_integer().unwrap().try_into().unwrap();
                 }
                 "json" => p.json = value.as_bool().unwrap(),
-                "lsm" => p.lsm = value.as_bool().unwrap(),
                 "seed" => {
                     p.seed = value.as_integer().unwrap().try_into().unwrap();
-                }
-                "readers" => {
-                    p.readers = value.as_integer().unwrap().try_into().unwrap();
-                }
-                "writers" => {
-                    p.writers = value.as_integer().unwrap().try_into().unwrap();
                 }
                 "loads" => {
                     p.loads = value.as_integer().unwrap().try_into().unwrap();
@@ -191,26 +202,46 @@ impl From<toml::Value> for Profile {
                 _ => panic!("invalid profile parameter {}", name),
             }
         }
-        p
-    }
-}
 
-impl From<Opt> for Profile {
-    fn from(opt: Opt) -> Profile {
-        let mut p: Profile = if opt.profile == "" {
-            Default::default()
-        } else {
-            match std::fs::read(opt.profile) {
-                Ok(text) => {
-                    let text = std::str::from_utf8(&text).unwrap();
-                    let toml_value: toml::Value = text.parse().unwrap();
-                    toml_value.into()
+        match p.index.as_str() {
+            "llrb-index" => (),
+            "bogn-llrb" => {
+                let section = &value["bogn-llrb"];
+                for (name, value) in section.as_table().unwrap().iter() {
+                    match name.as_str() {
+                        "lsm" => p.lsm = value.as_bool().unwrap(),
+                        "readers" => {
+                            let v = value.as_integer().unwrap();
+                            p.readers = v.try_into().unwrap();
+                        }
+                        "writers" => {
+                            let v = value.as_integer().unwrap();
+                            p.writers = v.try_into().unwrap();
+                        }
+                        _ => panic!("invalid profile parameter {}", name),
+                    }
                 }
-                Err(err) => panic!(err),
             }
-        };
-        if opt.seed > 0 {
-            p.seed = opt.seed;
+            "bogn-robt" => {
+                let section = &value["bogn-llrb"];
+                for (name, value) in section.as_table().unwrap().iter() {
+                    match name.as_str() {
+                        "readers" => {
+                            let v = value.as_integer().unwrap();
+                            p.readers = v.try_into().unwrap();
+                        }
+                        "path" => {
+                            p.path = {
+                                let v = value.as_str().unwrap();
+                                let path: &ffi::OsStr = v.as_ref();
+                                path.to_os_string()
+                            }
+                        }
+                        _ => panic!("invalid profile parameter {}", name),
+                    }
+                }
+            }
+            _ => panic!("invalid index {}", p.index),
         }
         p
     }

@@ -21,7 +21,7 @@ json = false
 seed = 0
 
 # Total number of initial load operations.
-loads = 1_000_000
+loads = 100_000_000
 
 # Total number of incremental set operations.
 sets = 0
@@ -43,23 +43,3 @@ revrs = 0
 
 [llrb-index]
 # no other options other than the [ixperf]
-
-[bogn-llrb]
-# Whether to create index in LSM (log-structured-merge) mode.
-lsm = false
-
-# Number of reader threads.
-readers = 0
-
-# Number of writer threads.
-writers = 0
-
-[bogn-robt]
-# Whether to create index in LSM (log-structured-merge) mode.
-lsm = false
-
-# On disk path, for index that need disk access.
-path = ""
-
-# Number of reader threads.
-readers = 0

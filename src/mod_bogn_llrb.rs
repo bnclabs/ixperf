@@ -12,21 +12,42 @@ where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
 {
-    let mut index: Box<Llrb<K, V>> = Llrb::new("ixperf");
+    let mut index: Box<Llrb<K, V>> = if p.lsm {
+        Llrb::new_lsm("ixperf")
+    } else {
+        Llrb::new("ixperf")
+    };
     let mut ostats = stats::Ops::new();
-    println!(
-        "node overhead for bogn-llrb: {}",
-        index.stats().to_node_size()
-    );
 
-    println!(
-        "\n==== INITIAL LOAD for type <{},{}> ====",
-        p.key_type, p.val_type
-    );
-
-    let gen = InitialLoad::<K, V>::new(p.clone());
+    let node_overhead = index.stats().to_node_size();
+    println!("node overhead for bogn-llrb: {}", node_overhead);
 
     let start = SystemTime::now();
+    do_initial_load(&mut index, &mut ostats, &p);
+    p.periodic_log(&ostats, true /*fin*/);
+    let dur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
+    println!("initial-load {} items in {:?}", index.len(), dur);
+
+    let start = SystemTime::now();
+    do_incremental(&mut index, &mut ostats, &p);
+    p.periodic_log(&ostats, true /*fin*/);
+    let (elapsed, len) = (start.elapsed().unwrap(), index.len());
+    let ops = ostats.total_ops();
+    let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
+    println!("incremental-load {} in {:?}, index-len: {}", ops, dur, len);
+}
+
+fn do_initial_load<K, V>(
+    index: &mut Box<Llrb<K, V>>, // index
+    ostats: &mut stats::Ops,
+    p: &Profile,
+) where
+    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
+    V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
+{
+    let (kt, vt) = (&p.key_type, &p.val_type);
+    println!("\n==== INITIAL LOAD for type <{},{}> ====", kt, vt);
+    let gen = InitialLoad::<K, V>::new(p.clone());
     for (i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Load { key, value } => {
@@ -43,19 +64,19 @@ where
             p.periodic_log(&ostats, false /*fin*/);
         }
     }
-    p.periodic_log(&ostats, true /*fin*/);
+}
 
-    let dur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
-    println!("initial-load {} items in {:?}", index.len(), dur);
-
-    println!(
-        "\n==== INCREMENTAL LOAD for type <{},{}> ====",
-        p.key_type, p.val_type
-    );
-
+fn do_incremental<K, V>(
+    index: &mut Box<Llrb<K, V>>, // index
+    ostats: &mut stats::Ops,
+    p: &Profile,
+) where
+    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
+    V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
+{
+    let (kt, vt) = (&p.key_type, &p.val_type);
+    println!("\n==== INCREMENTAL LOAD for type <{},{}> ====", kt, vt);
     let gen = IncrementalLoad::<K, V>::new(p.clone());
-
-    let start = SystemTime::now();
     for (i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Set { key, value } => {
@@ -109,14 +130,4 @@ where
             p.periodic_log(&ostats, false /*fin*/);
         }
     }
-    p.periodic_log(&ostats, true /*fin*/);
-
-    let (elapsed, len) = (start.elapsed().unwrap(), index.len());
-    let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
-    println!(
-        "incremental-load {} in {:?}, index-len: {}",
-        ostats.total_ops(),
-        dur,
-        len
-    );
 }
