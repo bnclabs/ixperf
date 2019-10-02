@@ -1,5 +1,6 @@
 mod generator;
 mod latency;
+mod mod_bogn_llrb;
 mod mod_llrb;
 //mod mod_lmdb;
 mod stats;
@@ -8,7 +9,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use structopt::StructOpt;
 
-const NUM_GENERATORS: usize = 1;
 const LOG_BATCH: usize = 1_000_000;
 
 #[derive(Debug, StructOpt, Clone)]
@@ -18,17 +18,17 @@ pub struct Opt {
     #[structopt(long = "path", default_value = "/tmp/ixperf")]
     pub path: String,
 
-    #[structopt(long = "type", default_value = "u64")]
-    pub typ: String,
+    #[structopt(long = "key-type", default_value = "i64")]
+    pub key_type: String,
+
+    #[structopt(long = "value-type", default_value = "i64")]
+    pub val_type: String,
 
     #[structopt(long = "key-size", default_value = "16")]
     pub keysize: usize,
 
     #[structopt(long = "val-size", default_value = "16")]
     pub valsize: usize,
-
-    #[structopt(long = "working-set", default_value = "1.0")]
-    pub working_set: f64,
 
     #[structopt(long = "json")]
     pub json: bool,
@@ -91,14 +91,35 @@ fn main() {
     make_seed(&mut opt);
     println!("starting with seed = {}", opt.seed);
 
-    //match (opt.index.as_str(), opt.typ.as_str()) {
-    //    ("llrb", "u32") => mod_llrb::perf::<u32>(opt),
-    //    ("llrb", "u64") => mod_llrb::perf::<u64>(opt),
-    //    ("llrb", "array") => mod_llrb::perf::<[u8; 32]>(opt),
-    //    ("llrb", "bytes") => mod_llrb::perf::<Vec<u8>>(opt),
-    //    //"lmdb" => mod_lmdb::perf(opt),
-    //    _ => panic!("unsupported inded/type {}/{}", opt.index, opt.typ),
-    //}
+    match (
+        opt.index.as_str(),
+        opt.key_type.as_str(),
+        opt.val_type.as_str(),
+    ) {
+        ("llrb", "i32", "i32") => mod_llrb::perf::<i32, i32>(opt),
+        ("llrb", "i32", "array") => mod_llrb::perf::<i32, [u8; 32]>(opt),
+        ("llrb", "i32", "bytes") => mod_llrb::perf::<i32, Vec<u8>>(opt),
+        ("llrb", "i64", "i64") => mod_llrb::perf::<i64, i64>(opt),
+        ("llrb", "i64", "array") => mod_llrb::perf::<i64, [u8; 32]>(opt),
+        ("llrb", "i64", "bytes") => mod_llrb::perf::<i64, Vec<u8>>(opt),
+        ("llrb", "array", "array") => mod_llrb::perf::<[u8; 32], [u8; 32]>(opt),
+        ("llrb", "array", "bytes") => mod_llrb::perf::<[u8; 32], Vec<u8>>(opt),
+        ("llrb", "bytes", "bytes") => mod_llrb::perf::<Vec<u8>, Vec<u8>>(opt),
+        ("bogn-llrb", "i32", "i32") => mod_bogn_llrb::perf::<i32, i32>(opt),
+        // ("bogn-llrb", "i32", "array") => mod_bogn_llrb::perf::<i32, [u8; 32]>(opt),
+        ("bogn-llrb", "i32", "bytes") => mod_bogn_llrb::perf::<i32, Vec<u8>>(opt),
+        ("bogn-llrb", "i64", "i64") => mod_bogn_llrb::perf::<i64, i64>(opt),
+        // ("bogn-llrb", "i64", "array") => mod_bogn_llrb::perf::<i64, [u8; 32]>(opt),
+        ("bogn-llrb", "i64", "bytes") => mod_bogn_llrb::perf::<i64, Vec<u8>>(opt),
+        // ("bogn-llrb", "array", "array") => mod_bogn_llrb::perf::<[u8; 32], [u8; 32]>(opt),
+        // ("bogn-llrb", "array", "bytes") => mod_bogn_llrb::perf::<[u8; 32], Vec<u8>>(opt),
+        ("bogn-llrb", "bytes", "bytes") => mod_bogn_llrb::perf::<Vec<u8>, Vec<u8>>(opt),
+        //"lmdb" => mod_lmdb::perf(opt),
+        _ => panic!(
+            "unsupported inded/type {}/<{},{}>",
+            opt.index, opt.key_type, opt.val_type
+        ),
+    }
 }
 
 fn make_seed(opt: &mut Opt) -> u128 {

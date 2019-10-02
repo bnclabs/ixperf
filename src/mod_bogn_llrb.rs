@@ -1,6 +1,7 @@
 use std::time::{Duration, SystemTime};
 
-use llrb_index::Llrb;
+use bogn::llrb::Llrb;
+use bogn::{Diff, Footprint, Reader, Writer};
 
 use crate::generator::{Cmd, IncrementalLoad, InitialLoad, RandomKV};
 use crate::stats;
@@ -8,12 +9,15 @@ use crate::Opt;
 
 pub fn perf<K, V>(opt: Opt)
 where
-    K: 'static + Clone + Default + Send + Sync + Ord + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
+    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
+    V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
 {
-    let mut index: Llrb<K, V> = Llrb::new("ixperf");
+    let mut index: Box<Llrb<K, V>> = Llrb::new("ixperf");
     let mut ostats = stats::Ops::new();
-    println!("node overhead for llrb: {}", index.stats().node_size());
+    println!(
+        "node overhead for bogn-llrb: {}",
+        index.stats().to_node_size()
+    );
 
     println!(
         "\n==== INITIAL LOAD for type <{},{}> ====",
@@ -27,7 +31,7 @@ where
         match cmd {
             Cmd::Load { key, value } => {
                 ostats.load.latency.start();
-                if index.set(key, value).is_some() {
+                if let Ok(Some(_)) = index.set(key, value) {
                     ostats.load.items += 1;
                 }
                 ostats.load.latency.stop();
@@ -56,7 +60,7 @@ where
         match cmd {
             Cmd::Set { key, value } => {
                 ostats.set.latency.start();
-                if index.set(key, value.clone()).is_some() {
+                if let Ok(Some(_)) = index.set(key, value.clone()) {
                     ostats.set.items += 1;
                 }
                 ostats.set.latency.stop();
@@ -64,7 +68,7 @@ where
             }
             Cmd::Delete { key } => {
                 ostats.delete.latency.start();
-                if index.delete(&key).is_none() {
+                if let Err(_) = index.delete(&key) {
                     ostats.delete.items += 1;
                 }
                 ostats.delete.latency.stop();
@@ -72,28 +76,28 @@ where
             }
             Cmd::Get { key } => {
                 ostats.get.latency.start();
-                if index.get(&key).is_none() {
+                if let Err(_) = index.get(&key) {
                     ostats.get.items += 1;
                 }
                 ostats.get.latency.stop();
                 ostats.get.count += 1;
             }
             Cmd::Iter => {
-                let iter = index.iter();
+                let iter = index.iter().unwrap();
                 ostats.iter.latency.start();
                 iter.for_each(|_| ostats.iter.items += 1);
                 ostats.iter.latency.stop();
                 ostats.iter.count += 1;
             }
             Cmd::Range { low, high } => {
-                let iter = index.range((low, high));
+                let iter = index.range((low, high)).unwrap();
                 ostats.range.latency.start();
                 iter.for_each(|_| ostats.range.items += 1);
                 ostats.range.latency.stop();
                 ostats.range.count += 1;
             }
             Cmd::Reverse { low, high } => {
-                let iter = index.reverse((low, high));
+                let iter = index.reverse((low, high)).unwrap();
                 ostats.reverse.latency.start();
                 iter.for_each(|_| ostats.reverse.items += 1);
                 ostats.reverse.latency.stop();

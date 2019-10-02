@@ -13,8 +13,8 @@ where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
-    opt: Opt,
-    thread: JoinHandle<()>,
+    _opt: Opt,
+    _thread: JoinHandle<()>,
     rx: mpsc::Receiver<Cmd<K, V>>,
 }
 
@@ -23,20 +23,13 @@ where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
-    pub fn new(opt: Opt) -> InitialLoad<K, V> {
+    pub fn new(_opt: Opt) -> InitialLoad<K, V> {
         let (tx, rx) = mpsc::channel();
-        let thread = {
-            let opt1 = opt.clone();
+        let _thread = {
+            let opt1 = _opt.clone();
             thread::spawn(move || initial_load(opt1, tx))
         };
-        InitialLoad { opt, thread, rx }
-    }
-
-    fn close(self) -> Result<(), String> {
-        for _cmd in self.rx {
-            // drain remaining load commands here
-        }
-        self.thread.join().map_err(|e| format!("{:?}", e))
+        InitialLoad { _opt, _thread, rx }
     }
 }
 
@@ -74,7 +67,7 @@ where
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
     opt: Opt,
-    thread: JoinHandle<()>,
+    _thread: JoinHandle<()>,
     rx: mpsc::Receiver<Cmd<K, V>>,
 }
 
@@ -85,18 +78,11 @@ where
 {
     pub fn new(opt: Opt) -> IncrementalRead<K, V> {
         let (tx, rx) = mpsc::channel();
-        let thread = {
+        let _thread = {
             let opt1 = opt.clone();
             thread::spawn(move || incremental_read(opt1, tx))
         };
-        IncrementalRead { opt, thread, rx }
-    }
-
-    fn close(self) -> Result<(), String> {
-        for _cmd in self.rx {
-            // drain remaining load commands here
-        }
-        self.thread.join().map_err(|e| format!("{:?}", e))
+        IncrementalRead { opt, _thread, rx }
     }
 }
 
@@ -158,7 +144,7 @@ where
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
     opt: Opt,
-    thread: JoinHandle<()>,
+    _thread: JoinHandle<()>,
     rx: mpsc::Receiver<Cmd<K, V>>,
 }
 
@@ -169,18 +155,11 @@ where
 {
     pub fn new(opt: Opt) -> IncrementalWrite<K, V> {
         let (tx, rx) = mpsc::channel();
-        let thread = {
+        let _thread = {
             let opt1 = opt.clone();
             thread::spawn(move || incremental_write(opt1, tx))
         };
-        IncrementalWrite { opt, thread, rx }
-    }
-
-    fn close(self) -> Result<(), String> {
-        for _cmd in self.rx {
-            // drain remaining load commands here
-        }
-        self.thread.join().map_err(|e| format!("{:?}", e))
+        IncrementalWrite { opt, _thread, rx }
     }
 }
 
@@ -235,8 +214,8 @@ where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
-    opt: Opt,
-    thread: JoinHandle<()>,
+    _opt: Opt,
+    _thread: JoinHandle<()>,
     rx: mpsc::Receiver<Cmd<K, V>>,
 }
 
@@ -245,20 +224,13 @@ where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
-    pub fn new(opt: Opt) -> IncrementalLoad<K, V> {
+    pub fn new(_opt: Opt) -> IncrementalLoad<K, V> {
         let (tx, rx) = mpsc::channel();
-        let thread = {
-            let opt1 = opt.clone();
+        let _thread = {
+            let opt1 = _opt.clone();
             thread::spawn(move || incremental_load(opt1, tx))
         };
-        IncrementalLoad { opt, thread, rx }
-    }
-
-    fn close(self) -> Result<(), String> {
-        for _cmd in self.rx {
-            // drain remaining load commands here
-        }
-        self.thread.join().map_err(|e| format!("{:?}", e))
+        IncrementalLoad { _opt, _thread, rx }
     }
 }
 
@@ -325,7 +297,6 @@ where
 pub enum Cmd<K, V> {
     Load { key: K, value: V },
     Set { key: K, value: V },
-    SetCas { key: K, value: V },
     Delete { key: K },
     Get { key: K },
     Iter,
@@ -349,14 +320,6 @@ where
     pub fn gen_set(rng: &mut SmallRng, opt: &Opt) -> Cmd<K, V> {
         let (key, value): (K, V) = unsafe { (mem::zeroed(), mem::zeroed()) };
         Cmd::Set {
-            key: key.gen_key(rng, opt),
-            value: value.gen_val(rng, opt),
-        }
-    }
-
-    pub fn gen_set_cas(rng: &mut SmallRng, opt: &Opt) -> Cmd<K, V> {
-        let (key, value): (K, V) = unsafe { (mem::zeroed(), mem::zeroed()) };
-        Cmd::SetCas {
             key: key.gen_key(rng, opt),
             value: value.gen_val(rng, opt),
         }
@@ -426,7 +389,7 @@ impl RandomKV for [u8; 32] {
     }
 
     fn gen_val(&self, _rng: &mut SmallRng, _opt: &Opt) -> [u8; 32] {
-        let mut arr = [0xAB_u8; 32];
+        let arr = [0xAB_u8; 32];
         arr
     }
 }
