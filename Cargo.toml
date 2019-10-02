@@ -10,6 +10,7 @@ edition = "2018"
 
 [dependencies]
 structopt = { version = "0.2", default-features = false }
+toml = "0.5.3"
 rand = "0.6.4"
 im="12.3.0"
 llrb-index = {path = "../llrb-index/"}

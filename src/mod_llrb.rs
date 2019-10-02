@@ -4,9 +4,9 @@ use llrb_index::Llrb;
 
 use crate::generator::{Cmd, IncrementalLoad, InitialLoad, RandomKV};
 use crate::stats;
-use crate::Opt;
+use crate::Profile;
 
-pub fn perf<K, V>(opt: Opt)
+pub fn perf<K, V>(p: Profile)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
@@ -17,10 +17,10 @@ where
 
     println!(
         "\n==== INITIAL LOAD for type <{},{}> ====",
-        opt.key_type, opt.val_type
+        p.key_type, p.val_type
     );
 
-    let gen = InitialLoad::<K, V>::new(opt.clone());
+    let gen = InitialLoad::<K, V>::new(p.clone());
 
     let start = SystemTime::now();
     for (i, cmd) in gen.enumerate() {
@@ -36,20 +36,20 @@ where
             _ => unreachable!(),
         };
         if (i % crate::LOG_BATCH) == 0 {
-            opt.periodic_log(&ostats, false /*fin*/);
+            p.periodic_log(&ostats, false /*fin*/);
         }
     }
-    opt.periodic_log(&ostats, true /*fin*/);
+    p.periodic_log(&ostats, true /*fin*/);
 
     let dur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
     println!("initial-load {} items in {:?}", index.len(), dur);
 
     println!(
         "\n==== INCREMENTAL LOAD for type <{},{}> ====",
-        opt.key_type, opt.val_type
+        p.key_type, p.val_type
     );
 
-    let gen = IncrementalLoad::<K, V>::new(opt.clone());
+    let gen = IncrementalLoad::<K, V>::new(p.clone());
 
     let start = SystemTime::now();
     for (i, cmd) in gen.enumerate() {
@@ -102,10 +102,10 @@ where
             _ => unreachable!(),
         };
         if (i % crate::LOG_BATCH) == 0 {
-            opt.periodic_log(&ostats, false /*fin*/);
+            p.periodic_log(&ostats, false /*fin*/);
         }
     }
-    opt.periodic_log(&ostats, true /*fin*/);
+    p.periodic_log(&ostats, true /*fin*/);
 
     let (elapsed, len) = (start.elapsed().unwrap(), index.len());
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
