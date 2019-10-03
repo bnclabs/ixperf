@@ -1,6 +1,7 @@
 mod generator;
 mod latency;
 mod mod_bogn_llrb;
+mod mod_bogn_mvcc;
 mod mod_llrb;
 //mod mod_lmdb;
 mod stats;
@@ -27,11 +28,18 @@ fn main() {
 
     println!("starting with seed = {}", p.seed);
 
+    // TODO - enable this via feature gating.
+    // use cpuprofiler::PROFILER;
+    // PROFILER.lock().unwrap().start("./ixperf.prof").unwrap();
+
     match p.index.as_str() {
         "llrb-index" => do_llrb_index(p),
         "bogn-llrb" => do_bogn_llrb(p),
+        "bogn-mvcc" => do_bogn_mvcc(p),
         _ => panic!("unsupported index-type {}", p.index),
     }
+
+    // PROFILER.lock().unwrap().stop().unwrap();
 }
 
 fn do_llrb_index(p: Profile) {
@@ -60,6 +68,21 @@ fn do_bogn_llrb(p: Profile) {
         // ("array", "array") => mod_bogn_llrb::perf::<[u8; 32], [u8; 32]>(p),
         // ("array", "bytes") => mod_bogn_llrb::perf::<[u8; 32], Vec<u8>>(p),
         ("bytes", "bytes") => mod_bogn_llrb::perf::<Vec<u8>, Vec<u8>>(p),
+        _ => panic!("unsupported key/value types {}/{}", p.key_type, p.val_type),
+    }
+}
+
+fn do_bogn_mvcc(p: Profile) {
+    match (p.key_type.as_str(), p.val_type.as_str()) {
+        ("i32", "i32") => mod_bogn_mvcc::perf::<i32, i32>(p),
+        // ("i32", "array") => mod_bogn_mvcc::perf::<i32, [u8; 32]>(p),
+        ("i32", "bytes") => mod_bogn_mvcc::perf::<i32, Vec<u8>>(p),
+        ("i64", "i64") => mod_bogn_mvcc::perf::<i64, i64>(p),
+        // ("i64", "array") => mod_bogn_mvcc::perf::<i64, [u8; 32]>(p),
+        ("i64", "bytes") => mod_bogn_mvcc::perf::<i64, Vec<u8>>(p),
+        // ("array", "array") => mod_bogn_mvcc::perf::<[u8; 32], [u8; 32]>(p),
+        // ("array", "bytes") => mod_bogn_mvcc::perf::<[u8; 32], Vec<u8>>(p),
+        ("bytes", "bytes") => mod_bogn_mvcc::perf::<Vec<u8>, Vec<u8>>(p),
         _ => panic!("unsupported key/value types {}/{}", p.key_type, p.val_type),
     }
 }
@@ -95,11 +118,15 @@ impl Profile {
         self.sets + self.deletes
     }
 
-    pub fn periodic_log(&self, ostats: &stats::Ops, fin: bool) {
+    pub fn threads(&self) -> usize {
+        self.readers + self.writers
+    }
+
+    pub fn periodic_log(&self, prefix: &str, ostats: &stats::Ops, fin: bool) {
         if self.json {
-            println!("{}", ostats.json());
+            println!("{}{}", prefix, ostats.json());
         } else {
-            ostats.pretty_print("", fin);
+            ostats.pretty_print(prefix, fin);
         }
     }
 }
@@ -207,6 +234,23 @@ impl From<toml::Value> for Profile {
             "llrb-index" => (),
             "bogn-llrb" => {
                 let section = &value["bogn-llrb"];
+                for (name, value) in section.as_table().unwrap().iter() {
+                    match name.as_str() {
+                        "lsm" => p.lsm = value.as_bool().unwrap(),
+                        "readers" => {
+                            let v = value.as_integer().unwrap();
+                            p.readers = v.try_into().unwrap();
+                        }
+                        "writers" => {
+                            let v = value.as_integer().unwrap();
+                            p.writers = v.try_into().unwrap();
+                        }
+                        _ => panic!("invalid profile parameter {}", name),
+                    }
+                }
+            }
+            "bogn-mvcc" => {
+                let section = &value["bogn-mvcc"];
                 for (name, value) in section.as_table().unwrap().iter() {
                     match name.as_str() {
                         "lsm" => p.lsm = value.as_bool().unwrap(),

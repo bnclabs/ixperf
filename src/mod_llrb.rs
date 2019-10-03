@@ -35,11 +35,11 @@ where
             }
             _ => unreachable!(),
         };
-        if (i % crate::LOG_BATCH) == 0 {
-            p.periodic_log(&ostats, false /*fin*/);
+        if ((i + 1) % crate::LOG_BATCH) == 0 {
+            p.periodic_log("initial-load ", &ostats, false /*fin*/);
         }
     }
-    p.periodic_log(&ostats, true /*fin*/);
+    p.periodic_log("initial-load ", &ostats, true /*fin*/);
 
     let dur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
     println!("initial-load {} items in {:?}", index.len(), dur);
@@ -101,11 +101,11 @@ where
             }
             _ => unreachable!(),
         };
-        if (i % crate::LOG_BATCH) == 0 {
-            p.periodic_log(&ostats, false /*fin*/);
+        if ((i + 1) % crate::LOG_BATCH) == 0 {
+            p.periodic_log("incremental-load ", &ostats, false /*fin*/);
         }
     }
-    p.periodic_log(&ostats, true /*fin*/);
+    p.periodic_log("incremental-load ", &ostats, true /*fin*/);
 
     let (elapsed, len) = (start.elapsed().unwrap(), index.len());
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);

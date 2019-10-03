@@ -58,7 +58,10 @@ where
     }
 
     let elapsed = start.elapsed().unwrap();
-    println!("--> initial_load(): {:10} items in {:?}", p.loads, elapsed);
+    println!(
+        "gen--> initial_load(): {:10} items in {:?}",
+        p.loads, elapsed
+    );
 }
 
 pub struct IncrementalRead<K, V>
@@ -66,7 +69,7 @@ where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
-    p: Profile,
+    _p: Profile,
     _thread: JoinHandle<()>,
     rx: mpsc::Receiver<Cmd<K, V>>,
 }
@@ -76,13 +79,13 @@ where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
-    pub fn new(p: Profile) -> IncrementalRead<K, V> {
+    pub fn new(_p: Profile) -> IncrementalRead<K, V> {
         let (tx, rx) = mpsc::channel();
         let _thread = {
-            let opt1 = p.clone();
+            let opt1 = _p.clone();
             thread::spawn(move || incremental_read(opt1, tx))
         };
-        IncrementalRead { p, _thread, rx }
+        IncrementalRead { _p, _thread, rx }
     }
 }
 
@@ -133,7 +136,7 @@ where
     let total = p.gets + p.iters + p.ranges + p.revrs;
     let elapsed = start.elapsed().unwrap();
     println!(
-        "--> incremental_read(): {:10} reads in {:?}",
+        "gen--> incremental_read(): {:10} reads in {:?}",
         total, elapsed
     );
 }
@@ -143,7 +146,7 @@ where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
-    p: Profile,
+    _p: Profile,
     _thread: JoinHandle<()>,
     rx: mpsc::Receiver<Cmd<K, V>>,
 }
@@ -153,13 +156,13 @@ where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
-    pub fn new(p: Profile) -> IncrementalWrite<K, V> {
+    pub fn new(_p: Profile) -> IncrementalWrite<K, V> {
         let (tx, rx) = mpsc::channel();
         let _thread = {
-            let opt1 = p.clone();
+            let opt1 = _p.clone();
             thread::spawn(move || incremental_write(opt1, tx))
         };
-        IncrementalWrite { p, _thread, rx }
+        IncrementalWrite { _p, _thread, rx }
     }
 }
 
@@ -204,7 +207,7 @@ where
     let total = p.gets + p.iters + p.ranges + p.revrs;
     let elapsed = start.elapsed().unwrap();
     println!(
-        "--> incremental_write(): {:10} reads in {:?}",
+        "gen--> incremental_write(): {:10} reads in {:?}",
         total, elapsed
     );
 }
@@ -289,7 +292,7 @@ where
     + p.sets + p.deletes; // writes
     let elapsed = start.elapsed().unwrap();
     println!(
-        "--> incremental_load(): {:10} reads in {:?}",
+        "gen--> incremental_load(): {:10} reads in {:?}",
         total, elapsed
     );
 }

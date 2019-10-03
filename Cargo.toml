@@ -16,3 +16,4 @@ im="12.3.0"
 llrb-index = {path = "../llrb-index/"}
 bogn = {path = "../bogn/"}
 lmdb = "0.8.0"
+cpuprofiler = "0.0.2"

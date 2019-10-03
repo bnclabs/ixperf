@@ -86,7 +86,7 @@ impl Latency {
         );
         for (percentile, ns_cent) in self.percentiles().into_iter() {
             let ns = Duration::from_nanos((ns_cent * 100) as u64);
-            println!("{}  {} percentile = {:?}", prefix, percentile, ns);
+            println!("{}  {:3} percentile = {:?}", prefix, percentile, ns);
         }
     }
 
