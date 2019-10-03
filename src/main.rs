@@ -8,9 +8,13 @@ mod stats;
 
 use std::{convert::TryInto, ffi};
 
+use jemallocator;
 use rand::random;
 use structopt::StructOpt;
 use toml;
+
+// #[global_allocator]
+// static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 const LOG_BATCH: usize = 1_000_000;
 
