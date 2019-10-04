@@ -31,9 +31,9 @@ where
     let dur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
     println!("initial-load {} items in {:?}", index.len(), dur);
 
-    if p.threads() == 0 {
+    if p.threads() == 0 && (p.read_ops() + p.write_ops()) > 0 {
         do_incremental(&mut index, &p);
-    } else {
+    } else if (p.read_ops() + p.write_ops()) > 0 {
         let mut threads = vec![];
         for _i in 0..p.readers {
             let r = index.to_reader().unwrap();
@@ -56,6 +56,10 @@ where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
 {
+    if p.loads == 0 {
+        return;
+    }
+
     let mut ostats = stats::Ops::new();
 
     let (kt, vt) = (&p.key_type, &p.val_type);
@@ -64,12 +68,9 @@ where
     for (i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Load { key, value } => {
-                ostats.load.latency.start();
-                if let Ok(Some(_)) = index.set(key, value) {
-                    ostats.load.items += 1;
-                }
-                ostats.load.latency.stop();
-                ostats.load.count += 1;
+                ostats.load.sample_start();
+                let items = index.set(key, value).unwrap().map_or(0, |_| 1);
+                ostats.load.sample_end(items);
             }
             _ => unreachable!(),
         };
@@ -85,6 +86,10 @@ where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
 {
+    if (p.read_ops() + p.write_ops()) == 0 {
+        return;
+    }
+
     let mut ostats = stats::Ops::new();
     let start = SystemTime::now();
 
@@ -94,49 +99,34 @@ where
     for (i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Set { key, value } => {
-                ostats.set.latency.start();
-                if let Ok(Some(_)) = index.set(key, value.clone()) {
-                    ostats.set.items += 1;
-                }
-                ostats.set.latency.stop();
-                ostats.set.count += 1;
+                ostats.set.sample_start();
+                let n = index.set(key, value.clone()).unwrap().map_or(0, |_| 1);
+                ostats.set.sample_end(n);
             }
             Cmd::Delete { key } => {
-                ostats.delete.latency.start();
-                if let Err(_) = index.delete(&key) {
-                    ostats.delete.items += 1;
-                }
-                ostats.delete.latency.stop();
-                ostats.delete.count += 1;
+                ostats.delete.sample_start();
+                let items = index.delete(&key).ok().map_or(1, |_| 0);
+                ostats.delete.sample_end(items);
             }
             Cmd::Get { key } => {
-                ostats.get.latency.start();
-                if let Err(_) = index.get(&key) {
-                    ostats.get.items += 1;
-                }
-                ostats.get.latency.stop();
-                ostats.get.count += 1;
+                ostats.get.sample_start();
+                let items = index.get(&key).ok().map_or(1, |_| 0);
+                ostats.get.sample_end(items);
             }
             Cmd::Iter => {
                 let iter = index.iter().unwrap();
-                ostats.iter.latency.start();
-                iter.for_each(|_| ostats.iter.items += 1);
-                ostats.iter.latency.stop();
-                ostats.iter.count += 1;
+                ostats.iter.sample_start();
+                ostats.iter.sample_end(iter.fold(0, |acc, _| acc + 1));
             }
             Cmd::Range { low, high } => {
                 let iter = index.range((low, high)).unwrap();
-                ostats.range.latency.start();
-                iter.for_each(|_| ostats.range.items += 1);
-                ostats.range.latency.stop();
-                ostats.range.count += 1;
+                ostats.range.sample_start();
+                ostats.range.sample_end(iter.fold(0, |acc, _| acc + 1));
             }
             Cmd::Reverse { low, high } => {
                 let iter = index.reverse((low, high)).unwrap();
-                ostats.reverse.latency.start();
-                iter.for_each(|_| ostats.reverse.items += 1);
-                ostats.reverse.latency.stop();
-                ostats.reverse.count += 1;
+                ostats.reverse.sample_start();
+                ostats.reverse.sample_end(iter.fold(0, |acc, _| acc + 1));
             }
             _ => unreachable!(),
         };
@@ -144,6 +134,7 @@ where
             p.periodic_log("incremental-load ", &ostats, false /*fin*/);
         }
     }
+
     p.periodic_log("incremental-load ", &ostats, true /*fin*/);
     let ops = ostats.total_ops();
     let (elapsed, len) = (start.elapsed().unwrap(), index.len());
@@ -156,6 +147,10 @@ where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
 {
+    if p.read_ops() == 0 {
+        return;
+    }
+
     let mut ostats = stats::Ops::new();
     let start = SystemTime::now();
 
@@ -165,33 +160,24 @@ where
     for (i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Get { key } => {
-                ostats.get.latency.start();
-                if let Err(_) = r.get(&key) {
-                    ostats.get.items += 1;
-                }
-                ostats.get.latency.stop();
-                ostats.get.count += 1;
+                ostats.get.sample_start();
+                let items = r.get(&key).ok().map_or(1, |_| 0);
+                ostats.get.sample_end(items);
             }
             Cmd::Iter => {
                 let iter = r.iter().unwrap();
-                ostats.iter.latency.start();
-                iter.for_each(|_| ostats.iter.items += 1);
-                ostats.iter.latency.stop();
-                ostats.iter.count += 1;
+                ostats.iter.sample_start();
+                ostats.iter.sample_end(iter.fold(0, |acc, _| acc + 1));
             }
             Cmd::Range { low, high } => {
                 let iter = r.range((low, high)).unwrap();
-                ostats.range.latency.start();
-                iter.for_each(|_| ostats.range.items += 1);
-                ostats.range.latency.stop();
-                ostats.range.count += 1;
+                ostats.range.sample_start();
+                ostats.range.sample_end(iter.fold(0, |acc, _| acc + 1));
             }
             Cmd::Reverse { low, high } => {
                 let iter = r.reverse((low, high)).unwrap();
-                ostats.reverse.latency.start();
-                iter.for_each(|_| ostats.reverse.items += 1);
-                ostats.reverse.latency.stop();
-                ostats.reverse.count += 1;
+                ostats.reverse.sample_start();
+                ostats.reverse.sample_end(iter.fold(0, |acc, _| acc + 1));
             }
             _ => unreachable!(),
         };
@@ -199,6 +185,7 @@ where
             p.periodic_log("incremental-read ", &ostats, false /*fin*/);
         }
     }
+
     p.periodic_log("incremental-read ", &ostats, true /*fin*/);
     let ops = ostats.total_ops();
     let elapsed = start.elapsed().unwrap();
@@ -211,6 +198,10 @@ where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
 {
+    if p.write_ops() == 0 {
+        return;
+    }
+
     let mut ostats = stats::Ops::new();
     let start = SystemTime::now();
 
@@ -220,20 +211,14 @@ where
     for (i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Set { key, value } => {
-                ostats.set.latency.start();
-                if let Ok(Some(_)) = w.set(key, value.clone()) {
-                    ostats.set.items += 1;
-                }
-                ostats.set.latency.stop();
-                ostats.set.count += 1;
+                ostats.set.sample_start();
+                let n = w.set(key, value.clone()).unwrap().map_or(0, |_| 1);
+                ostats.set.sample_end(n);
             }
             Cmd::Delete { key } => {
-                ostats.delete.latency.start();
-                if let Err(_) = w.delete(&key) {
-                    ostats.delete.items += 1;
-                }
-                ostats.delete.latency.stop();
-                ostats.delete.count += 1;
+                ostats.delete.sample_start();
+                let items = w.delete(&key).ok().map_or(1, |_| 0);
+                ostats.delete.sample_end(items);
             }
             _ => unreachable!(),
         };
@@ -241,6 +226,7 @@ where
             p.periodic_log("incremental-write ", &ostats, false /*fin*/);
         }
     }
+
     p.periodic_log("incremental-write ", &ostats, true /*fin*/);
     let ops = ostats.total_ops();
     let elapsed = start.elapsed().unwrap();

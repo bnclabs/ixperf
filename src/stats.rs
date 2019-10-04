@@ -1,15 +1,31 @@
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use crate::latency::Latency;
 
 pub struct Op {
-    pub name: String,
-    pub latency: Latency,
-    pub count: usize,
-    pub items: usize,
+    name: String,
+    latency: Latency,
+    count: usize,
+    items: usize,
 }
 
 impl Op {
+    #[inline]
+    pub fn sample_start(&mut self) {
+        self.count += 1;
+        if (self.count % 8) == 0 {
+            self.latency.start();
+        }
+    }
+
+    #[inline]
+    pub fn sample_end(&mut self, items: usize) {
+        if (self.count % 8) == 0 {
+            self.latency.stop();
+        }
+        self.items += items;
+    }
+
     fn pretty_print(&self, p: &str, fin: bool) {
         if self.count == 0 {
             return;
@@ -24,9 +40,6 @@ impl Op {
         match self.name.as_str() {
             "load" => {
                 println!("{}load ops {}, updates {}", p, c, i);
-            }
-            "create" => {
-                println!("{}create ops {}, updates {}", p, c, i);
             }
             "set" => {
                 println!("{}set ops {}, inserts {}", p, c, i);
@@ -77,13 +90,13 @@ impl Op {
 
 pub struct Ops {
     pub load: Op,
-    pub create: Op,
     pub set: Op,
     pub delete: Op,
     pub get: Op,
     pub iter: Op,
     pub range: Op,
     pub reverse: Op,
+    start: SystemTime,
 }
 
 impl Ops {
@@ -93,57 +106,58 @@ impl Ops {
             load: Op {
                 name: "load".to_string(),
                 latency: Latency::new(),
-                count,
                 items,
-            },
-            create: Op {
-                name: "create".to_string(),
-                latency: Latency::new(),
                 count,
-                items,
             },
             set: Op {
                 name: "set".to_string(),
                 latency: Latency::new(),
-                count,
                 items,
+                count,
             },
             delete: Op {
                 name: "delete".to_string(),
                 latency: Latency::new(),
-                count,
                 items,
+                count,
             },
             get: Op {
                 name: "get".to_string(),
                 latency: Latency::new(),
-                count,
                 items,
+                count,
             },
             iter: Op {
                 name: "iter".to_string(),
                 latency: Latency::new(),
-                count,
                 items,
+                count,
             },
             range: Op {
                 name: "range".to_string(),
                 latency: Latency::new(),
-                count,
                 items,
+                count,
             },
             reverse: Op {
                 name: "reverse".to_string(),
                 latency: Latency::new(),
-                count,
                 items,
+                count,
             },
+            start: SystemTime::now(),
         }
     }
 
     pub fn pretty_print(&self, prefix: &str, fin: bool) {
+        if fin {
+            let elapsed = self.start.elapsed().unwrap().as_nanos() as u64;
+            let elapsed = elapsed / (self.total_ops() as u64);
+            let avg_lat_per_op = Duration::from_nanos(elapsed);
+            println!("average latency per op: {:?}", avg_lat_per_op);
+        }
+
         self.load.pretty_print(prefix, fin);
-        self.create.pretty_print(prefix, fin);
         self.set.pretty_print(prefix, fin);
         self.delete.pretty_print(prefix, fin);
         self.get.pretty_print(prefix, fin);
@@ -155,7 +169,6 @@ impl Ops {
     pub fn json(&self) -> String {
         let strs = [
             self.load.json(),
-            self.create.json(),
             self.set.json(),
             self.delete.json(),
             self.get.json(),
@@ -176,9 +189,9 @@ impl Ops {
         ("stats { ".to_string() + &strs.join(", ") + " }").to_string()
     }
 
+    #[inline]
     pub fn total_ops(&self) -> usize {
         self.load.count
-            + self.create.count
             + self.set.count
             + self.delete.count
             + self.get.count

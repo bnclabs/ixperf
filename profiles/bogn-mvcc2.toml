@@ -46,7 +46,7 @@ revrs = 0
 lsm = true
 
 # Number of reader threads.
-readers = 4
+readers = 32
 
 # Number of writer threads.
 writers = 0

@@ -13,8 +13,8 @@ use rand::random;
 use structopt::StructOpt;
 use toml;
 
-// #[global_allocator]
-// static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 const LOG_BATCH: usize = 1_000_000;
 
@@ -33,8 +33,8 @@ fn main() {
     println!("starting with seed = {}", p.seed);
 
     // TODO - enable this via feature gating.
-    // use cpuprofiler::PROFILER;
-    // PROFILER.lock().unwrap().start("./ixperf.prof").unwrap();
+    use cpuprofiler::PROFILER;
+    PROFILER.lock().unwrap().start("./ixperf.prof").unwrap();
 
     match p.index.as_str() {
         "llrb-index" => do_llrb_index(p),
@@ -43,7 +43,7 @@ fn main() {
         _ => panic!("unsupported index-type {}", p.index),
     }
 
-    // PROFILER.lock().unwrap().stop().unwrap();
+    PROFILER.lock().unwrap().stop().unwrap();
 }
 
 fn do_llrb_index(p: Profile) {
