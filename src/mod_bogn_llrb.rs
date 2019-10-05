@@ -49,6 +49,7 @@ where
             t.join().unwrap()
         }
     }
+    println!("llrb lock conflicts: {}", index.stats().to_conflicts());
 }
 
 fn do_initial_load<K, V>(index: &mut Box<Llrb<K, V>>, p: &Profile)

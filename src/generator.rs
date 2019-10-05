@@ -365,8 +365,9 @@ pub trait RandomKV {
 }
 
 impl RandomKV for i32 {
-    fn gen_key(&self, rng: &mut SmallRng, _p: &Profile) -> i32 {
-        i32::abs(rng.gen())
+    fn gen_key(&self, rng: &mut SmallRng, p: &Profile) -> i32 {
+        let limit: i32 = usize::max(p.loads, p.write_ops()) as i32;
+        i32::abs(rng.gen::<i32>() % limit)
     }
 
     fn gen_val(&self, rng: &mut SmallRng, _p: &Profile) -> i32 {
@@ -375,8 +376,9 @@ impl RandomKV for i32 {
 }
 
 impl RandomKV for i64 {
-    fn gen_key(&self, rng: &mut SmallRng, _p: &Profile) -> i64 {
-        i64::abs(rng.gen())
+    fn gen_key(&self, rng: &mut SmallRng, p: &Profile) -> i64 {
+        let limit: i64 = usize::max(p.loads, p.write_ops()) as i64;
+        i64::abs(rng.gen::<i64>() % limit)
     }
 
     fn gen_val(&self, rng: &mut SmallRng, _p: &Profile) -> i64 {
@@ -385,8 +387,9 @@ impl RandomKV for i64 {
 }
 
 impl RandomKV for [u8; 32] {
-    fn gen_key(&self, rng: &mut SmallRng, _p: &Profile) -> [u8; 32] {
-        let num = i64::abs(rng.gen());
+    fn gen_key(&self, rng: &mut SmallRng, p: &Profile) -> [u8; 32] {
+        let limit = usize::max(p.loads, p.write_ops()) as i64;
+        let num = i64::abs(rng.gen::<i64>() % limit);
         let mut arr = [0_u8; 32];
         let src = format!("{:032}", num).as_bytes().to_vec();
         arr.copy_from_slice(&src);
@@ -404,7 +407,8 @@ impl RandomKV for Vec<u8> {
         let mut key = Vec::with_capacity(p.key_size);
         key.resize(p.key_size, b'0');
 
-        let num = i64::abs(rng.gen());
+        let limit = usize::max(p.loads, p.write_ops()) as i64;
+        let num = i64::abs(rng.gen::<i64>() % limit);
         let src = format!("{:0width$}", num, width = p.key_size);
         src.as_bytes().to_vec()
     }

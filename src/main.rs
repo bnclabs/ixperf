@@ -13,6 +13,8 @@ use rand::random;
 use structopt::StructOpt;
 use toml;
 
+//  TODO: try valgrid after injecting a memory leak in mvcc.
+
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 

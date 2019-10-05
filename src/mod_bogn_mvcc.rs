@@ -50,6 +50,7 @@ where
             t.join().unwrap()
         }
     }
+    println!("mvcc lock conflicts: {}", index.stats().to_conflicts());
 }
 
 fn do_initial_load<K, V>(index: &mut Box<Mvcc<K, V>>, p: &Profile)
