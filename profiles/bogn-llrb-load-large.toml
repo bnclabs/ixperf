@@ -1,18 +1,18 @@
 [ixperf]
 # Index-type to benchmark.
-index = "bogn-mvcc"
+index = "bogn-llrb"
 
 # Key-type for the index.
-key_type = "i64"
+key_type = "bytes"
 
 # Value-type for the index
-value_type = "i64"
+value_type = "bytes"
 
 # Block size if key-type is vector-of-bytes.
-key_size = 64
+key_size = 20
 
 # Block size if key-type is vector-of-bytes.
-value_size = 64
+value_size = 400
 
 # statistics output format
 json = false
@@ -21,7 +21,7 @@ json = false
 seed = 0
 
 # Total number of initial load operations.
-loads = 1_000_000
+loads = 100_000_000
 
 # Total number of incremental set operations.
 sets = 0
@@ -30,7 +30,7 @@ sets = 0
 deletes = 0
 
 # Total number of get operations.
-gets = 10_000_000
+gets = 0
 
 # Total number of full table scan.
 iters = 0
@@ -41,12 +41,12 @@ ranges = 0
 # Total number of reverse iterations between an upper bound and lower bound.
 revrs = 0
 
-[bogn-mvcc]
+[bogn-llrb]
 # Whether to create index in LSM (log-structured-merge) mode.
 lsm = true
 
 # Number of reader threads.
-readers = 32
+readers = 0
 
 # Number of writer threads.
 writers = 0
