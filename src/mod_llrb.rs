@@ -20,6 +20,7 @@ where
     println!("initial-load {} items in {:?}", index.len(), dur);
 
     do_incremental(&mut index, &p);
+    validate(index, p);
 }
 
 fn do_initial_load<K, V>(index: &mut Llrb<K, V>, p: &Profile)
@@ -117,4 +118,16 @@ where
         dur,
         len
     );
+}
+
+fn validate<K, V>(index: Llrb<K, V>, _p: Profile)
+where
+    K: 'static + Clone + Default + Send + Sync + Ord + RandomKV,
+    V: 'static + Clone + Default + Send + Sync + RandomKV,
+{
+    // TODO: validate the statitics
+    match index.validate() {
+        Ok(_) => (),
+        Err(err) => panic!(err),
+    }
 }

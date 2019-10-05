@@ -1,5 +1,5 @@
 use std::{
-    thread,
+    fmt, thread,
     time::{Duration, SystemTime},
 };
 
@@ -14,7 +14,7 @@ use crate::Profile;
 
 pub fn perf<K, V>(p: Profile)
 where
-    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
+    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV + fmt::Debug,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
 {
     let mut index: Box<Llrb<K, V>> = if p.lsm {
@@ -50,6 +50,7 @@ where
         }
     }
     println!("llrb lock conflicts: {}", index.stats().to_conflicts());
+    validate(index, p);
 }
 
 fn do_initial_load<K, V>(index: &mut Box<Llrb<K, V>>, p: &Profile)
@@ -233,4 +234,20 @@ where
     let elapsed = start.elapsed().unwrap();
     let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
     println!("incremental-write {} in {:?}", ops, dur);
+}
+
+fn validate<K, V>(index: Box<Llrb<K, V>>, p: Profile)
+where
+    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV + fmt::Debug,
+    V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
+{
+    // TODO: validate the statitics
+    match index.validate() {
+        Ok(stats) => {
+            if p.write_ops() == 0 {
+                assert!(stats.to_conflicts() == 0);
+            }
+        }
+        Err(err) => panic!(err),
+    }
 }
