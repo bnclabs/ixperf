@@ -24,7 +24,7 @@ where
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
     pub fn new(_p: Profile) -> InitialLoad<K, V> {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::sync_channel(_p.gen_channel_size);
         let _thread = {
             let opt1 = _p.clone();
             thread::spawn(move || initial_load(opt1, tx))
@@ -45,7 +45,7 @@ where
     }
 }
 
-fn initial_load<K, V>(p: Profile, tx: mpsc::Sender<Cmd<K, V>>)
+fn initial_load<K, V>(p: Profile, tx: mpsc::SyncSender<Cmd<K, V>>)
 where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
@@ -80,7 +80,7 @@ where
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
     pub fn new(_p: Profile) -> IncrementalRead<K, V> {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::sync_channel(_p.gen_channel_size);
         let _thread = {
             let opt1 = _p.clone();
             thread::spawn(move || incremental_read(opt1, tx))
@@ -101,7 +101,7 @@ where
     }
 }
 
-fn incremental_read<K, V>(p: Profile, tx: mpsc::Sender<Cmd<K, V>>)
+fn incremental_read<K, V>(p: Profile, tx: mpsc::SyncSender<Cmd<K, V>>)
 where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
@@ -157,7 +157,7 @@ where
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
     pub fn new(_p: Profile) -> IncrementalWrite<K, V> {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::sync_channel(_p.gen_channel_size);
         let _thread = {
             let opt1 = _p.clone();
             thread::spawn(move || incremental_write(opt1, tx))
@@ -178,7 +178,7 @@ where
     }
 }
 
-fn incremental_write<K, V>(p: Profile, tx: mpsc::Sender<Cmd<K, V>>)
+fn incremental_write<K, V>(p: Profile, tx: mpsc::SyncSender<Cmd<K, V>>)
 where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
@@ -228,7 +228,7 @@ where
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
     pub fn new(_p: Profile) -> IncrementalLoad<K, V> {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::sync_channel(_p.gen_channel_size);
         let _thread = {
             let opt1 = _p.clone();
             thread::spawn(move || incremental_load(opt1, tx))
@@ -249,7 +249,7 @@ where
     }
 }
 
-fn incremental_load<K, V>(p: Profile, tx: mpsc::Sender<Cmd<K, V>>)
+fn incremental_load<K, V>(p: Profile, tx: mpsc::SyncSender<Cmd<K, V>>)
 where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
@@ -366,7 +366,7 @@ pub trait RandomKV {
 
 impl RandomKV for i32 {
     fn gen_key(&self, rng: &mut SmallRng, p: &Profile) -> i32 {
-        let limit: i32 = usize::max(p.loads, p.write_ops()) as i32;
+        let limit = p.loads as i32;
         i32::abs(rng.gen::<i32>() % limit)
     }
 
@@ -377,7 +377,7 @@ impl RandomKV for i32 {
 
 impl RandomKV for i64 {
     fn gen_key(&self, rng: &mut SmallRng, p: &Profile) -> i64 {
-        let limit: i64 = usize::max(p.loads, p.write_ops()) as i64;
+        let limit = p.loads as i64;
         i64::abs(rng.gen::<i64>() % limit)
     }
 
@@ -388,7 +388,7 @@ impl RandomKV for i64 {
 
 impl RandomKV for [u8; 32] {
     fn gen_key(&self, rng: &mut SmallRng, p: &Profile) -> [u8; 32] {
-        let limit = usize::max(p.loads, p.write_ops()) as i64;
+        let limit = p.loads as i64;
         let num = i64::abs(rng.gen::<i64>() % limit);
         let mut arr = [0_u8; 32];
         let src = format!("{:032}", num).as_bytes().to_vec();
@@ -407,7 +407,7 @@ impl RandomKV for Vec<u8> {
         let mut key = Vec::with_capacity(p.key_size);
         key.resize(p.key_size, b'0');
 
-        let limit = usize::max(p.loads, p.write_ops()) as i64;
+        let limit = p.loads as i64;
         let num = i64::abs(rng.gen::<i64>() % limit);
         let src = format!("{:0width$}", num, width = p.key_size);
         src.as_bytes().to_vec()
