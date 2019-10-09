@@ -44,7 +44,7 @@ revrs = 0
 [llrb-index]
 # no other options other than the [ixperf]
 
-[bogn-llrb]
+[rdms-llrb]
 # Whether to create index in LSM (log-structured-merge) mode.
 lsm = false
 
@@ -54,7 +54,7 @@ readers = 0
 # Number of writer threads.
 writers = 0
 
-[bogn-robt]
+[rdms-robt]
 # Whether to create index in LSM (log-structured-merge) mode.
 lsm = false
 

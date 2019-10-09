@@ -1,6 +1,6 @@
 [ixperf]
 # Index-type to benchmark.
-index = "bogn-mvcc"
+index = "rdms-mvcc"
 
 # Key-type for the index.
 key_type = "i64"
@@ -12,7 +12,7 @@ value_type = "i64"
 key_size = 64
 
 # Block size if key-type is vector-of-bytes.
-value_size = 64
+value_size = 1024
 
 # statistics output format
 json = false
@@ -24,7 +24,7 @@ seed = 0
 loads = 10_000_000
 
 # Total number of incremental set operations.
-sets = 10_000_000
+sets = 0
 
 # Total number of incremental delete operations.
 deletes = 0
@@ -41,7 +41,7 @@ ranges = 0
 # Total number of reverse iterations between an upper bound and lower bound.
 revrs = 0
 
-[bogn-mvcc]
+[rdms-mvcc]
 # Whether to create index in LSM (log-structured-merge) mode.
 lsm = true
 
@@ -49,4 +49,4 @@ lsm = true
 readers = 0
 
 # Number of writer threads.
-writers = 1
+writers = 0
