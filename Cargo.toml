@@ -14,7 +14,7 @@ toml = "0.5.3"
 rand = "0.6.4"
 im="12.3.0"
 llrb-index = {path = "../llrb-index/"}
-bogn = {path = "../bogn/"}
+rdms = {path = "../rdms/"}
 lmdb = "0.8.0"
 # cpuprofiler = "0.0.2"
 jemallocator = "0.3.0"

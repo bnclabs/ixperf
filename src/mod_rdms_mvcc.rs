@@ -3,8 +3,8 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use bogn::llrb::{Llrb, LlrbReader, LlrbWriter};
-use bogn::{Diff, Footprint, Index, Reader, Writer};
+use rdms::mvcc::{Mvcc, MvccReader, MvccWriter};
+use rdms::{Diff, Footprint, Index, Reader, Writer};
 
 use crate::generator::{
     Cmd, IncrementalLoad, IncrementalRead, IncrementalWrite, InitialLoad, RandomKV,
@@ -16,24 +16,25 @@ pub fn perf<K, V>(p: Profile)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV + fmt::Debug,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
+    <V as Diff>::D: Send + Sync,
 {
-    let mut index: Box<Llrb<K, V>> = if p.lsm {
-        Llrb::new_lsm("ixperf")
+    let mut index: Box<Mvcc<K, V>> = if p.lsm {
+        Mvcc::new_lsm("ixperf")
     } else {
-        Llrb::new("ixperf")
+        Mvcc::new("ixperf")
     };
 
-    let node_overhead = index.stats().to_node_size();
-    println!("node overhead for bogn-llrb: {}", node_overhead);
+    let node_overhead = index.to_stats().to_node_size();
+    println!("node overhead for rdms-mvcc: {}", node_overhead);
 
     let start = SystemTime::now();
     do_initial_load(&mut index, &p);
     let dur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
     println!("initial-load {} items in {:?}", index.len(), dur);
 
-    if p.threads() == 0 && (p.read_ops() + p.write_ops()) > 0 {
+    if p.threads() == 0 {
         do_incremental(&mut index, &p);
-    } else if (p.read_ops() + p.write_ops()) > 0 {
+    } else {
         let mut threads = vec![];
         for _i in 0..p.readers {
             let r = index.to_reader().unwrap();
@@ -49,11 +50,11 @@ where
             t.join().unwrap()
         }
     }
-    println!("llrb lock conflicts: {}", index.stats().to_conflicts());
+    println!("mvcc lock conflicts: {}", index.to_stats().to_conflicts());
     validate(index, p);
 }
 
-fn do_initial_load<K, V>(index: &mut Box<Llrb<K, V>>, p: &Profile)
+fn do_initial_load<K, V>(index: &mut Box<Mvcc<K, V>>, p: &Profile)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
@@ -83,7 +84,7 @@ where
     p.periodic_log("initial-load ", &ostats, true /*fin*/);
 }
 
-fn do_incremental<K, V>(index: &mut Box<Llrb<K, V>>, p: &Profile)
+fn do_incremental<K, V>(index: &mut Box<Mvcc<K, V>>, p: &Profile)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
@@ -144,7 +145,7 @@ where
     println!("incremental-load {} in {:?}, index-len: {}", ops, dur, len);
 }
 
-fn do_read<K, V>(r: LlrbReader<K, V>, p: Profile)
+fn do_read<K, V>(r: MvccReader<K, V>, p: Profile)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
@@ -195,7 +196,7 @@ where
     println!("incremental-read {} in {:?}", ops, dur);
 }
 
-fn do_write<K, V>(mut w: LlrbWriter<K, V>, p: Profile)
+fn do_write<K, V>(mut w: MvccWriter<K, V>, p: Profile)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
@@ -236,10 +237,11 @@ where
     println!("incremental-write {} in {:?}", ops, dur);
 }
 
-fn validate<K, V>(index: Box<Llrb<K, V>>, p: Profile)
+fn validate<K, V>(index: Box<Mvcc<K, V>>, p: Profile)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV + fmt::Debug,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
+    <V as Diff>::D: Send + Sync,
 {
     // TODO: validate the statitics
     match index.validate() {

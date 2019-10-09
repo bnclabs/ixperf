@@ -1,8 +1,8 @@
 mod generator;
 mod latency;
-mod mod_bogn_llrb;
-mod mod_bogn_mvcc;
 mod mod_llrb;
+mod mod_rdms_llrb;
+mod mod_rdms_mvcc;
 //mod mod_lmdb;
 mod stats;
 
@@ -40,8 +40,8 @@ fn main() {
 
     match p.index.as_str() {
         "llrb-index" => do_llrb_index(p),
-        "bogn-llrb" => do_bogn_llrb(p),
-        "bogn-mvcc" => do_bogn_mvcc(p),
+        "rdms-llrb" => do_rdms_llrb(p),
+        "rdms-mvcc" => do_rdms_mvcc(p),
         _ => panic!("unsupported index-type {}", p.index),
     }
 
@@ -63,32 +63,32 @@ fn do_llrb_index(p: Profile) {
     }
 }
 
-fn do_bogn_llrb(p: Profile) {
+fn do_rdms_llrb(p: Profile) {
     match (p.key_type.as_str(), p.val_type.as_str()) {
-        ("i32", "i32") => mod_bogn_llrb::perf::<i32, i32>(p),
-        // ("i32", "array") => mod_bogn_llrb::perf::<i32, [u8; 32]>(p),
-        ("i32", "bytes") => mod_bogn_llrb::perf::<i32, Vec<u8>>(p),
-        ("i64", "i64") => mod_bogn_llrb::perf::<i64, i64>(p),
-        // ("i64", "array") => mod_bogn_llrb::perf::<i64, [u8; 32]>(p),
-        ("i64", "bytes") => mod_bogn_llrb::perf::<i64, Vec<u8>>(p),
-        // ("array", "array") => mod_bogn_llrb::perf::<[u8; 32], [u8; 32]>(p),
-        // ("array", "bytes") => mod_bogn_llrb::perf::<[u8; 32], Vec<u8>>(p),
-        ("bytes", "bytes") => mod_bogn_llrb::perf::<Vec<u8>, Vec<u8>>(p),
+        ("i32", "i32") => mod_rdms_llrb::perf::<i32, i32>(p),
+        // ("i32", "array") => mod_rdms_llrb::perf::<i32, [u8; 32]>(p),
+        ("i32", "bytes") => mod_rdms_llrb::perf::<i32, Vec<u8>>(p),
+        ("i64", "i64") => mod_rdms_llrb::perf::<i64, i64>(p),
+        // ("i64", "array") => mod_rdms_llrb::perf::<i64, [u8; 32]>(p),
+        ("i64", "bytes") => mod_rdms_llrb::perf::<i64, Vec<u8>>(p),
+        // ("array", "array") => mod_rdms_llrb::perf::<[u8; 32], [u8; 32]>(p),
+        // ("array", "bytes") => mod_rdms_llrb::perf::<[u8; 32], Vec<u8>>(p),
+        ("bytes", "bytes") => mod_rdms_llrb::perf::<Vec<u8>, Vec<u8>>(p),
         _ => panic!("unsupported key/value types {}/{}", p.key_type, p.val_type),
     }
 }
 
-fn do_bogn_mvcc(p: Profile) {
+fn do_rdms_mvcc(p: Profile) {
     match (p.key_type.as_str(), p.val_type.as_str()) {
-        ("i32", "i32") => mod_bogn_mvcc::perf::<i32, i32>(p),
-        // ("i32", "array") => mod_bogn_mvcc::perf::<i32, [u8; 32]>(p),
-        ("i32", "bytes") => mod_bogn_mvcc::perf::<i32, Vec<u8>>(p),
-        ("i64", "i64") => mod_bogn_mvcc::perf::<i64, i64>(p),
-        // ("i64", "array") => mod_bogn_mvcc::perf::<i64, [u8; 32]>(p),
-        ("i64", "bytes") => mod_bogn_mvcc::perf::<i64, Vec<u8>>(p),
-        // ("array", "array") => mod_bogn_mvcc::perf::<[u8; 32], [u8; 32]>(p),
-        // ("array", "bytes") => mod_bogn_mvcc::perf::<[u8; 32], Vec<u8>>(p),
-        ("bytes", "bytes") => mod_bogn_mvcc::perf::<Vec<u8>, Vec<u8>>(p),
+        ("i32", "i32") => mod_rdms_mvcc::perf::<i32, i32>(p),
+        // ("i32", "array") => mod_rdms_mvcc::perf::<i32, [u8; 32]>(p),
+        ("i32", "bytes") => mod_rdms_mvcc::perf::<i32, Vec<u8>>(p),
+        ("i64", "i64") => mod_rdms_mvcc::perf::<i64, i64>(p),
+        // ("i64", "array") => mod_rdms_mvcc::perf::<i64, [u8; 32]>(p),
+        ("i64", "bytes") => mod_rdms_mvcc::perf::<i64, Vec<u8>>(p),
+        // ("array", "array") => mod_rdms_mvcc::perf::<[u8; 32], [u8; 32]>(p),
+        // ("array", "bytes") => mod_rdms_mvcc::perf::<[u8; 32], Vec<u8>>(p),
+        ("bytes", "bytes") => mod_rdms_mvcc::perf::<Vec<u8>, Vec<u8>>(p),
         _ => panic!("unsupported key/value types {}/{}", p.key_type, p.val_type),
     }
 }
@@ -240,8 +240,8 @@ impl From<toml::Value> for Profile {
 
         match p.index.as_str() {
             "llrb-index" => (),
-            "bogn-llrb" => {
-                let section = &value["bogn-llrb"];
+            "rdms-llrb" => {
+                let section = &value["rdms-llrb"];
                 for (name, value) in section.as_table().unwrap().iter() {
                     match name.as_str() {
                         "lsm" => p.lsm = value.as_bool().unwrap(),
@@ -257,8 +257,8 @@ impl From<toml::Value> for Profile {
                     }
                 }
             }
-            "bogn-mvcc" => {
-                let section = &value["bogn-mvcc"];
+            "rdms-mvcc" => {
+                let section = &value["rdms-mvcc"];
                 for (name, value) in section.as_table().unwrap().iter() {
                     match name.as_str() {
                         "lsm" => p.lsm = value.as_bool().unwrap(),
@@ -274,8 +274,8 @@ impl From<toml::Value> for Profile {
                     }
                 }
             }
-            "bogn-robt" => {
-                let section = &value["bogn-llrb"];
+            "rdms-robt" => {
+                let section = &value["rdms-llrb"];
                 for (name, value) in section.as_table().unwrap().iter() {
                     match name.as_str() {
                         "readers" => {
