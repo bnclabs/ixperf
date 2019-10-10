@@ -3,6 +3,7 @@ mod latency;
 mod mod_llrb;
 mod mod_rdms_llrb;
 mod mod_rdms_mvcc;
+mod mod_rdms_robt;
 //mod mod_lmdb;
 mod stats;
 
@@ -42,6 +43,7 @@ fn main() {
         "llrb-index" => do_llrb_index(p),
         "rdms-llrb" => do_rdms_llrb(p),
         "rdms-mvcc" => do_rdms_mvcc(p),
+        "rdms-robt" => do_rdms_robt(p),
         _ => panic!("unsupported index-type {}", p.index),
     }
 
@@ -89,6 +91,21 @@ fn do_rdms_mvcc(p: Profile) {
         // ("array", "array") => mod_rdms_mvcc::perf::<[u8; 32], [u8; 32]>(p),
         // ("array", "bytes") => mod_rdms_mvcc::perf::<[u8; 32], Vec<u8>>(p),
         ("bytes", "bytes") => mod_rdms_mvcc::perf::<Vec<u8>, Vec<u8>>(p),
+        _ => panic!("unsupported key/value types {}/{}", p.key_type, p.val_type),
+    }
+}
+
+fn do_rdms_robt(p: Profile) {
+    match (p.key_type.as_str(), p.val_type.as_str()) {
+        ("i32", "i32") => mod_rdms_robt::perf::<i32, i32>(p),
+        // ("i32", "array") => mod_rdms_robt::perf::<i32, [u8; 32]>(p),
+        ("i32", "bytes") => mod_rdms_robt::perf::<i32, Vec<u8>>(p),
+        ("i64", "i64") => mod_rdms_robt::perf::<i64, i64>(p),
+        // ("i64", "array") => mod_rdms_robt::perf::<i64, [u8; 32]>(p),
+        ("i64", "bytes") => mod_rdms_robt::perf::<i64, Vec<u8>>(p),
+        // ("array", "array") => mod_rdms_robt::perf::<[u8; 32], [u8; 32]>(p),
+        // ("array", "bytes") => mod_rdms_robt::perf::<[u8; 32], Vec<u8>>(p),
+        ("bytes", "bytes") => mod_rdms_robt::perf::<Vec<u8>, Vec<u8>>(p),
         _ => panic!("unsupported key/value types {}/{}", p.key_type, p.val_type),
     }
 }
@@ -154,7 +171,7 @@ impl Default for Profile {
             path,
             key_size: 64,
             val_size: 64,
-            gen_channel_size: 100_000,
+            gen_channel_size: 1_000_000,
             json: false,
             lsm: false,
             seed,
@@ -185,9 +202,13 @@ impl From<Opt> for Profile {
                 Err(err) => panic!(err),
             }
         };
-        if opt.seed > 0 {
-            p.seed = opt.seed;
-        }
+        p.seed = if opt.seed > 0 {
+            opt.seed
+        } else if p.seed == 0 {
+            random()
+        } else {
+            p.seed
+        };
         p
     }
 }
@@ -275,7 +296,7 @@ impl From<toml::Value> for Profile {
                 }
             }
             "rdms-robt" => {
-                let section = &value["rdms-llrb"];
+                let section = &value["rdms-robt"];
                 for (name, value) in section.as_table().unwrap().iter() {
                     match name.as_str() {
                         "readers" => {
