@@ -40,7 +40,7 @@ where
     validate(index, p);
 }
 
-fn do_initial_load<K, V>(p: &Profile) -> (String, String)
+fn do_initial_load<K, V>(p: &Profile) -> (ffi::OsString, String)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV + Serialize,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV + Serialize,
@@ -70,14 +70,13 @@ where
     let dir = {
         let mut dir = path::PathBuf::from(std::env::temp_dir());
         dir.push("ixperf-rdms-robt");
-        let dir_ref: &ffi::OsStr = dir.as_ref();
-        dir_ref.to_str().unwrap().to_string()
+        dir.into_os_string()
     };
     let name = "ixperf";
     let config: robt::Config = Default::default();
     let b = robt::Builder::initial(&dir, name, config).unwrap();
     let iter = ref_index.iter().unwrap();
-    println!("dir:{}  name:{}", dir, name);
+    println!("dir:{:?}  name:{}", dir, name);
     b.build(iter, vec![]).unwrap();
 
     let dur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
