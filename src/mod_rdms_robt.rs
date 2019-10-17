@@ -74,7 +74,7 @@ where
     };
     let name = "ixperf";
     let config: robt::Config = Default::default();
-    let b = robt::Builder::initial(&dir, name, config).unwrap();
+    let b = robt::Builder::commit(&dir, name, config).unwrap();
     let iter = ref_index.iter().unwrap();
     println!("dir:{:?}  name:{}", dir, name);
     b.build(iter, vec![]).unwrap();

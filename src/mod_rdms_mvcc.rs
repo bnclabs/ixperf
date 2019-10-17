@@ -4,7 +4,7 @@ use std::{
 };
 
 use rdms::mvcc::{Mvcc, MvccReader, MvccWriter};
-use rdms::{Diff, Footprint, Index, Reader, Writer};
+use rdms::{Diff, EphemeralIndex, Footprint, Reader, Writer};
 
 use crate::generator::{
     Cmd, IncrementalLoad, IncrementalRead, IncrementalWrite, InitialLoad, RandomKV,
