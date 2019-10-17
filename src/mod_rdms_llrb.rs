@@ -144,7 +144,7 @@ where
     println!("incremental-load {} in {:?}, index-len: {}", ops, dur, len);
 }
 
-fn do_read<K, V>(r: LlrbReader<K, V>, p: Profile)
+fn do_read<K, V>(mut r: LlrbReader<K, V>, p: Profile)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,

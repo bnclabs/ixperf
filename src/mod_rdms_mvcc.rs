@@ -145,7 +145,7 @@ where
     println!("incremental-load {} in {:?}, index-len: {}", ops, dur, len);
 }
 
-fn do_read<K, V>(r: MvccReader<K, V>, p: Profile)
+fn do_read<K, V>(mut r: MvccReader<K, V>, p: Profile)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
