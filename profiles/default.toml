@@ -8,14 +8,13 @@ key_type = "i64"
 # Value-type for the index
 value_type = "i64"
 
+[generator]
+
 # Block size if key-type is vector-of-bytes.
 key_size = 64
 
 # Block size if key-type is vector-of-bytes.
 value_size = 64
-
-# statistics output format
-json = false
 
 # Seed for randomization.
 seed = 0
@@ -40,6 +39,9 @@ ranges = 0
 
 # Total number of reverse iterations between an upper bound and lower bound.
 revrs = 0
+
+# channel size to use between generator thread and loader thread.
+channel_size = 100_000
 
 [llrb-index]
 # no other options other than the [ixperf]
