@@ -1,28 +1,33 @@
-use std::time::{Duration, SystemTime};
+use std::{
+    fmt,
+    time::{Duration, SystemTime},
+};
 
 pub struct Latency {
     samples: usize,
-    total: u128,
+    total: Duration,
     start: SystemTime,
     min: u128,
     max: u128,
     latencies: Vec<usize>, // NOTE: large value, can't be in stack.
 }
 
-impl Latency {
-    pub fn new() -> Latency {
+impl Default for Latency {
+    fn default() -> Latency {
         let mut lat = Latency {
-            samples: 0,
-            total: 0,
+            samples: Default::default(),
+            total: Default::default(),
             start: SystemTime::now(),
-            min: 0,
-            max: 0,
+            min: std::u128::MAX,
+            max: std::u128::MIN,
             latencies: Vec::with_capacity(1_000_000),
         };
-        lat.latencies.resize(1_000_000, 0);
+        lat.latencies.resize(lat.latencies.capacity(), 0);
         lat
     }
+}
 
+impl Latency {
     pub fn start(&mut self) {
         self.samples += 1;
         self.start = SystemTime::now();
@@ -30,12 +35,8 @@ impl Latency {
 
     pub fn stop(&mut self) {
         let elapsed = self.start.elapsed().unwrap().as_nanos();
-        if self.min == 0 || elapsed < self.min {
-            self.min = elapsed
-        }
-        if self.min == 0 || elapsed > self.max {
-            self.max = elapsed
-        }
+        self.min = std::cmp::min(self.min, elapsed);
+        self.max = std::cmp::max(self.max, elapsed);
         let latency = (elapsed / 100) as usize;
         let ln = self.latencies.len();
         if latency < ln {
@@ -43,12 +44,12 @@ impl Latency {
         } else {
             self.latencies[ln - 1] += 1;
         }
-        self.total += elapsed;
+        self.total += Duration::from_nanos(elapsed as u64);
     }
 
-    pub fn percentiles(&self) -> Vec<(u8, u128)> {
+    pub fn to_percentiles(&self) -> Vec<(u8, u128)> {
         let mut percentiles: Vec<(u8, u128)> = vec![];
-        let (mut acc, mut prev_perc) = (0_f64, 89_u8);
+        let (mut acc, mut prev_perc) = (0_f64, 90_u8);
         let iter = self.latencies.iter().enumerate().filter(|(_, &x)| x > 0);
         for (latency, &samples) in iter {
             acc += samples as f64;
@@ -61,51 +62,66 @@ impl Latency {
         percentiles
     }
 
-    pub fn mean(&self) -> u128 {
-        self.total / (self.samples as u128)
+    pub fn to_mean(&self) -> u128 {
+        self.total.as_nanos() / (self.samples as u128)
     }
 
-    pub fn samples(&self) -> usize {
-        self.samples
+    pub fn merge(&mut self, other: &Self) {
+        self.samples += other.samples;
+        self.total += other.total;
+        self.min = std::cmp::min(self.min, other.min);
+        self.max = std::cmp::max(self.max, other.max);
+        self.latencies
+            .iter_mut()
+            .zip(other.latencies.iter())
+            .for_each(|(x, y)| *x = *x + *y);
     }
 
-    pub fn pretty_print(&self, prefix: &str) {
-        let arg1 = (
-            Duration::from_nanos(self.min as u64),
-            Duration::from_nanos(self.mean() as u64),
-            Duration::from_nanos(self.max as u64),
-        );
-        let rate = (self.samples as f64) / (self.total as f64 / 1_000_000_000.0);
-        println!(
-            "{}elapsed: {:.2?} samples: {} rate: {} ops/s\nstats: {:?}",
-            prefix,
-            Duration::from_nanos(self.total as u64),
-            self.samples,
-            rate as u64,
-            arg1
-        );
-        for (percentile, ns_cent) in self.percentiles().into_iter() {
-            let ns = Duration::from_nanos((ns_cent * 100) as u64);
-            println!("{}  {:3} percentile = {:?}", prefix, percentile, ns);
-        }
-    }
-
-    pub fn json(&self) -> String {
+    #[allow(dead_code)] // TODO: remove this once ixperf stabilizes.
+    pub fn to_json(&self) -> String {
+        let total = self.total.as_nanos();
+        let rate = (self.samples as u128) / (total / 1_000_000_000);
         let ps: Vec<String> = self
-            .percentiles()
+            .to_percentiles()
             .into_iter()
             .map(|(p, ns)| format!(r#""{}": {}"#, p, (ns * 100)))
             .collect();
-        let rate = (self.samples as u128) / (self.total / 1_000_000_000);
         let strs = [
-            format!("samples: {}", self.samples),
-            format!("elapsed: {}", self.total),
-            format!("rate: {}", rate),
-            format!("min: {}", self.min),
-            format!("mean: {}", self.mean()),
-            format!("max: {}", self.max),
-            format!("percentiles: {{ {} }}", ps.join(", ")),
+            format!(r#""n": {}"#, self.samples),
+            format!(r#""elapsed": {}"#, total),
+            format!(r#""rate": {}"#, rate),
+            format!(r#""min": {}"#, self.min),
+            format!(r#""mean": {}"#, self.to_mean()),
+            format!(r#""max": {}"#, self.max),
+            format!(r#""latencies": {{ {} }}"#, ps.join(", ")),
         ];
         ("{ ".to_string() + &strs.join(", ") + " }").to_string()
+    }
+}
+
+impl fmt::Display for Latency {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let total = self.total.as_nanos();
+        let rate = (self.samples as f64) / (total as f64 / 1_000_000_000.0);
+        let props: Vec<String> = self
+            .to_percentiles()
+            .into_iter()
+            .map(|(perc, latn)| format!("{}={}", perc, (latn * 100)))
+            .collect();
+        let latencies = props.join(", ");
+        write!(
+            f,
+            concat!(
+                "{{ n={}, elapsed={}, rate={}, min={}, ",
+                "mean={}, max={}, latencies={{ {} }}"
+            ),
+            self.samples,
+            self.total.as_nanos(),
+            rate as u64,
+            self.min,
+            self.max,
+            self.to_mean(),
+            latencies,
+        )
     }
 }

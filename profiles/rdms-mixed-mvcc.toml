@@ -39,7 +39,7 @@ iters = 0
 ranges = 0
 
 # Total number of reverse iterations between an upper bound and lower bound.
-revrs = 0
+reverses = 0
 
 [rdms-mvcc]
 # Whether to create index in LSM (log-structured-merge) mode.

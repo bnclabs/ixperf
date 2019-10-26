@@ -6,15 +6,21 @@ mod mod_llrb;
 // TODO mod mod_rdms_mvcc;
 // TODO mod mod_rdms_robt;
 mod stats;
+mod utils;
 
-use std::{convert::TryInto, ffi};
+use std::{
+    convert::{TryFrom, TryInto},
+    ffi,
+};
 
 use jemallocator;
 use rand::random;
 use structopt::StructOpt;
 use toml;
 
-//  TODO: try valgrid after injecting a memory leak in mvcc.
+// TODO: try valgrid after injecting a memory leak in mvcc.
+// TODO: check for unreachable!() and panic!() macros and make it more
+// user friendly.
 
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
@@ -28,66 +34,60 @@ pub struct Opt {
 
     #[structopt(long = "seed", default_value = "0")]
     seed: u128,
+
+    #[structopt(short = "v", long = "verbose")]
+    verbose: bool,
 }
 
-impl From<Opt> for Profile {
-    fn from(opt: Opt) -> Profile {
-        if opt.profile == "" {
-            panic!("please provide a profile file"); // TODO: exit(1)
-        }
-        let p: Profile = match std::fs::read(opt.profile) {
-            Ok(text) => {
-                let text = std::str::from_utf8(&text).unwrap();
-                let toml_value: toml::Value = text.parse().unwrap();
-                toml_value.into()
-            }
-            Err(err) => panic!(err), // TODO: exit(1)
+impl TryFrom<Opt> for Profile {
+    type Error = String;
+    fn try_from(opt: Opt) -> Result<Profile, String> {
+        let mut p: Profile = match opt.profile.as_str() {
+            "" => Err(format!("please provide a profile file")),
+            profile => match std::fs::read(profile) {
+                Ok(text) => {
+                    let text = std::str::from_utf8(&text).unwrap();
+                    let toml_value = match text.parse::<toml::Value>() {
+                        Ok(value) => Ok(value),
+                        Err(err) => Err(format!("{:}", err)),
+                    }?;
+                    Ok(TryFrom::try_from(toml_value)?)
+                }
+                Err(err) => Err(format!("{:?}", err)),
+            },
+        }?;
+        p.verbose = opt.verbose;
+        let seed = std::cmp::max(p.g.seed, opt.seed);
+        p.g.seed = match seed {
+            n if n > 0 => seed,
+            n if n == 0 => random(),
+            n => n,
         };
-        p.g.seed = if opt.g.seed > 0 {
-            opt.seed
-        } else if p.g.seed == 0 {
-            random()
-        } else {
-            p.gseed
-        };
-        p
+        Ok(p)
     }
 }
 
 fn main() {
-    let p: Profile = Opt::from_args().into();
+    let p: Profile = Opt::from_args().try_into().expect("invalid args/profile");
 
-    println!("starting with seed = {}", p.seed);
+    println!("starting with seed = {}", p.g.seed);
 
     // TODO - enable this via feature gating.
     // use cpuprofiler::PROFILER;
     // PROFILER.lock().unwrap().start("./ixperf.prof").unwrap();
 
     match p.index.as_str() {
-        "llrb-index" => do_llrb_index(p),
+        "llrb-index" => mod_llrb::do_llrb_index(p),
         //"rdms-llrb" => do_rdms_llrb(p),
         //"rdms-mvcc" => do_rdms_mvcc(p),
         //"rdms-robt" => do_rdms_robt(p),
         _ => panic!("unsupported index-type {}", p.index),
     }
+    .expect("failed do_llrb_index()");
 
     // PROFILER.lock().unwrap().stop().unwrap();
 }
 
-//fn do_llrb_index(p: Profile) {
-//    match (p.key_type.as_str(), p.val_type.as_str()) {
-//        ("i32", "i32") => mod_llrb::perf::<i32, i32>(p),
-//        ("i32", "array") => mod_llrb::perf::<i32, [u8; 32]>(p),
-//        ("i32", "bytes") => mod_llrb::perf::<i32, Vec<u8>>(p),
-//        ("i64", "i64") => mod_llrb::perf::<i64, i64>(p),
-//        ("i64", "array") => mod_llrb::perf::<i64, [u8; 32]>(p),
-//        ("i64", "bytes") => mod_llrb::perf::<i64, Vec<u8>>(p),
-//        ("array", "array") => mod_llrb::perf::<[u8; 32], [u8; 32]>(p),
-//        ("array", "bytes") => mod_llrb::perf::<[u8; 32], Vec<u8>>(p),
-//        ("bytes", "bytes") => mod_llrb::perf::<Vec<u8>, Vec<u8>>(p),
-//        _ => panic!("unsupported key/value types {}/{}", p.key_type, p.val_type),
-//    }
-//}
 //
 //fn do_rdms_llrb(p: Profile) {
 //    match (p.key_type.as_str(), p.val_type.as_str()) {
@@ -141,31 +141,25 @@ pub struct Profile {
     pub index: String,
     pub key_type: String,
     pub val_type: String,
-    pub g: GenOptions,
+    pub verbose: bool,
+    pub g: generator::GenOptions,
 }
 
-//impl Profile {
-//    pub fn periodic_log(&self, prefix: &str, ostats: &stats::Ops, fin: bool) {
-//        if self.json {
-//            println!("{}{}", prefix, ostats.json());
-//        } else {
-//            ostats.pretty_print(prefix, fin);
-//        }
-//    }
-//}
-
-impl From<toml::Value> for Profile {
-    fn from(value: toml::Value) -> Profile {
+impl TryFrom<toml::Value> for Profile {
+    type Error = String;
+    fn try_from(value: toml::Value) -> Result<Profile, String> {
         let mut p: Profile = Default::default();
         let section = &value["ixperf"];
         for (name, value) in section.as_table().unwrap().iter() {
             match name.as_str() {
-                "index" => p.index = util::toml_to_string(value),
-                "key_type" => p.key_type = util::toml_to_string(value),
-                "value_type" => p.val_type = util::toml_to_string(value),
+                "index" => p.index = utils::toml_to_string(value),
+                "key_type" => p.key_type = utils::toml_to_string(value),
+                "value_type" => p.val_type = utils::toml_to_string(value),
+                _ => return Err(format!("invalid option {}", name)),
             }
         }
-        p.g = value.clone().into();
+        p.g = TryFrom::try_from(value.clone())?;
+        Ok(p)
     }
 }
 
@@ -207,8 +201,8 @@ impl From<toml::Value> for Profile {
 //                "ranges" => {
 //                    p.ranges = value.as_integer().unwrap().try_into().unwrap();
 //                }
-//                "revrs" => {
-//                    p.revrs = value.as_integer().unwrap().try_into().unwrap();
+//                "reverses" => {
+//                    p.g.reverses = value.as_integer().unwrap().try_into().unwrap();
 //                }
 //                _ => panic!("invalid profile parameter {}", name),
 //            }

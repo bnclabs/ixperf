@@ -1,4 +1,4 @@
-use std::time::{Duration, SystemTime};
+use std::fmt;
 
 use crate::latency::Latency;
 
@@ -10,6 +10,21 @@ pub struct Op {
 }
 
 impl Op {
+    pub fn new(name: &str) -> Op {
+        Op {
+            name: name.to_string(),
+            latency: Default::default(),
+            count: Default::default(),
+            items: Default::default(),
+        }
+    }
+
+    fn merge(&mut self, other: &Self) {
+        self.count += other.count;
+        self.items += other.items;
+        self.latency.merge(&other.latency);
+    }
+
     #[inline]
     pub fn sample_start(&mut self) {
         self.count += 1;
@@ -26,65 +41,88 @@ impl Op {
         self.items += items;
     }
 
-    fn pretty_print(&self, p: &str, fin: bool) {
-        if self.count == 0 {
-            return;
-        }
-
-        if fin == false {
-            self.latency.pretty_print(p);
-            return;
-        }
-
-        let (c, i) = (self.count, self.items);
-        match self.name.as_str() {
-            "load" => {
-                println!("{}load ops {}, updates {}", p, c, i);
-            }
-            "set" => {
-                println!("{}set ops {}, inserts {}", p, c, i);
-            }
-            "delete" => {
-                println!("{}delete ops {}, missing {}", p, c, i);
-            }
-            "get" => {
-                println!("{}get ops {}, missing {}", p, c, i);
-            }
-            "iter" => {
-                let t = self.latency.mean() * (self.latency.samples() as u128);
-                let ns = t / (self.items as u128);
-                let dur = Duration::from_nanos(ns as u64);
-                println!("{}iter ops {}, items {} mean {:?}", p, c, i, dur);
-            }
-            "range" => {
-                let t = self.latency.mean() * (self.latency.samples() as u128);
-                let ns = t / (self.items as u128);
-                let dur = Duration::from_nanos(ns as u64);
-                println!("{}range ops {}, items {} mean {:?}", p, c, i, dur);
-            }
-            "reverse" => {
-                let t = self.latency.mean() * (self.latency.samples() as u128);
-                let ns = t / (self.items as u128);
-                let dur = Duration::from_nanos(ns as u64);
-                println!("{}revese ops {}, items {} mean {:?}", p, c, i, dur);
-            }
-            _ => unreachable!(),
-        }
-        self.latency.pretty_print(p);
-    }
-
-    pub fn json(&self) -> String {
+    pub fn to_json(&self) -> String {
         if self.count == 0 {
             return "".to_string();
         }
+        match self.name.as_str() {
+            "load" => format!(
+                r#""load": {{ "ops": {}, "updates": {}, "latency": {}}}"#,
+                self.count, self.items, self.latency
+            ),
+            "set" => format!(
+                r#""set": {{ "ops": {}, "updates": {}, "latency": {}}}"#,
+                self.count, self.items, self.latency
+            ),
+            "delete" => format!(
+                r#""delete": {{ "ops": {}, "updates": {}, "latency": {}}}"#,
+                self.count, self.items, self.latency
+            ),
+            "get" => format!(
+                r#""get": {{ "ops": {}, "updates": {}, "latency": {}}}"#,
+                self.count, self.items, self.latency
+            ),
+            "iter" => format!(
+                r#""iter": {{ "ops": {}, "updates": {}, "latency": {}}}"#,
+                self.count, self.items, self.latency
+            ),
+            "range" => format!(
+                r#""range": {{ "ops": {}, "updates": {}, "latency": {}}}"#,
+                self.count, self.items, self.latency
+            ),
+            "reverse" => format!(
+                r#""reverse": {{ "ops": {}, "updates": {}, "latency": {}}}"#,
+                self.count, self.items, self.latency
+            ),
+            _ => unreachable!(),
+        }
+    }
+}
 
-        let strs = [
-            format!("count: {}", self.count),
-            format!("items: {}", self.items),
-            format!("latency: {}", self.latency.json()),
-        ];
-        let value = "{ ".to_string() + &strs.join(", ") + " }";
-        format!("{}: {}", self.name, value)
+impl fmt::Display for Op {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        if self.count == 0 {
+            return Ok(());
+        }
+
+        match self.name.as_str() {
+            "load" => write!(
+                f,
+                "load = {{ ops={}, updates={}, latency={} }}",
+                self.count, self.items, self.latency
+            ),
+            "set" => write!(
+                f,
+                "set = {{ ops={}, updates={}, latency={} }}",
+                self.count, self.items, self.latency
+            ),
+            "delete" => write!(
+                f,
+                "delete = {{ ops={}, updates={}, latency={} }}",
+                self.count, self.items, self.latency
+            ),
+            "get" => write!(
+                f,
+                "get = {{ ops={}, updates={}, latency={} }}",
+                self.count, self.items, self.latency
+            ),
+            "iter" => write!(
+                f,
+                "iter = {{ ops={}, updates={}, latency={} }}",
+                self.count, self.items, self.latency
+            ),
+            "range" => write!(
+                f,
+                "range = {{ ops={}, updates={}, latency={} }}",
+                self.count, self.items, self.latency
+            ),
+            "reverse" => write!(
+                f,
+                "reverse = {{ ops={}, updates={}, latency={} }}",
+                self.count, self.items, self.latency
+            ),
+            _ => unreachable!(),
+        }
     }
 }
 
@@ -96,85 +134,52 @@ pub struct Ops {
     pub iter: Op,
     pub range: Op,
     pub reverse: Op,
-    start: SystemTime,
 }
 
 impl Ops {
     pub fn new() -> Ops {
-        let (count, items) = (0, 0);
         Ops {
-            load: Op {
-                name: "load".to_string(),
-                latency: Latency::new(),
-                items,
-                count,
-            },
-            set: Op {
-                name: "set".to_string(),
-                latency: Latency::new(),
-                items,
-                count,
-            },
-            delete: Op {
-                name: "delete".to_string(),
-                latency: Latency::new(),
-                items,
-                count,
-            },
-            get: Op {
-                name: "get".to_string(),
-                latency: Latency::new(),
-                items,
-                count,
-            },
-            iter: Op {
-                name: "iter".to_string(),
-                latency: Latency::new(),
-                items,
-                count,
-            },
-            range: Op {
-                name: "range".to_string(),
-                latency: Latency::new(),
-                items,
-                count,
-            },
-            reverse: Op {
-                name: "reverse".to_string(),
-                latency: Latency::new(),
-                items,
-                count,
-            },
-            start: SystemTime::now(),
+            load: Op::new("load"),
+            set: Op::new("set"),
+            delete: Op::new("delete"),
+            get: Op::new("get"),
+            iter: Op::new("iter"),
+            range: Op::new("range"),
+            reverse: Op::new("reverse"),
         }
     }
 
-    pub fn pretty_print(&self, prefix: &str, fin: bool) {
-        if fin {
-            let elapsed = self.start.elapsed().unwrap().as_nanos() as u64;
-            let elapsed = elapsed / (self.total_ops() as u64);
-            let avg_lat_per_op = Duration::from_nanos(elapsed);
-            println!("average latency per op: {:?}", avg_lat_per_op);
-        }
-
-        self.load.pretty_print(prefix, fin);
-        self.set.pretty_print(prefix, fin);
-        self.delete.pretty_print(prefix, fin);
-        self.get.pretty_print(prefix, fin);
-        self.iter.pretty_print(prefix, fin);
-        self.range.pretty_print(prefix, fin);
-        self.reverse.pretty_print(prefix, fin);
+    #[allow(dead_code)] // TODO: remove this once ixperf stabilizes.
+    pub fn to_total(&self) -> usize {
+        self.load.count
+            + self.set.count
+            + self.delete.count
+            + self.get.count
+            + self.iter.count
+            + self.range.count
+            + self.reverse.count
     }
 
-    pub fn json(&self) -> String {
+    pub fn merge(&mut self, other: &Self) {
+        self.load.merge(&other.load);
+        self.set.merge(&other.set);
+        self.delete.merge(&other.delete);
+        self.get.merge(&other.get);
+        self.iter.merge(&other.iter);
+        self.range.merge(&other.range);
+        self.reverse.merge(&other.reverse);
+    }
+
+    #[allow(dead_code)] // TODO: remove this once ixperf stabilizes.
+    pub fn to_json(&self) -> String {
         let strs = [
-            self.load.json(),
-            self.set.json(),
-            self.delete.json(),
-            self.get.json(),
-            self.iter.json(),
-            self.range.json(),
-            self.reverse.json(),
+            self.load.to_json(),
+            self.set.to_json(),
+            self.delete.to_json(),
+            self.get.to_json(),
+            self.iter.to_json(),
+            self.range.to_json(),
+            self.reverse.to_json(),
         ];
         let strs: Vec<String> = strs
             .iter()
@@ -188,15 +193,16 @@ impl Ops {
             .collect();
         ("stats { ".to_string() + &strs.join(", ") + " }").to_string()
     }
+}
 
-    #[inline]
-    pub fn total_ops(&self) -> usize {
-        self.load.count
-            + self.set.count
-            + self.delete.count
-            + self.get.count
-            + self.iter.count
-            + self.range.count
-            + self.reverse.count
+impl fmt::Display for Ops {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "{}\n", self.load).unwrap();
+        write!(f, "{}\n", self.set).unwrap();
+        write!(f, "{}\n", self.delete).unwrap();
+        write!(f, "{}\n", self.get).unwrap();
+        write!(f, "{}\n", self.iter).unwrap();
+        write!(f, "{}\n", self.range).unwrap();
+        write!(f, "{}\n", self.reverse)
     }
 }
