@@ -29,7 +29,7 @@ use toml;
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
-#[derive(Debug, StructOpt, Clone)]
+#[derive(Debug, StructOpt)]
 pub struct Opt {
     #[structopt(long = "profile", default_value = "")]
     profile: String,
@@ -111,8 +111,8 @@ fn init_logging() {
 fn main() {
     init_logging();
 
-    let ops = Opt::from_args();
-    if p.plot.len() > 0 {
+    let opts = Opt::from_args();
+    if opts.plot.0.len() > 0 {
         match plot::do_plot(opts) {
             Ok(_) => (),
             Err(err) => error!(target: "main  ", "plot-failed: {}", err),

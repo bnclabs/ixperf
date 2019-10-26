@@ -1,4 +1,4 @@
-use std::{path, time};
+use std::{fs, io::Read, path, str::FromStr, time};
 
 use log::info;
 use plotters::{
@@ -8,89 +8,6 @@ use plotters::{
 use regex::Regex;
 
 use crate::Opt;
-
-struct PlotFiles(Vec<fs::File>);
-
-impl FromStr for PlotFiles {
-    type Err = String;
-
-    fn from_str(s: &str) -> PlotFiles {
-        let files = vec![];
-        for file_name in s.split(",") {
-            match OpenOptions::new().read(true).open(file_name) {
-                Ok(file) => files.push(file),
-                Err(err) => return format!("invalid plot file {}", file_name),
-            }
-        }
-        PlotFiles(files)
-    }
-}
-
-struct PlotTypes(Vec<String>);
-
-impl FromStr for PlotTypes {
-    type Err = String;
-
-    fn from_str(s: &str) -> PlotTypes {
-        let types = vec![];
-        for typ in s.split(",") {
-            match typ {
-                "throughput" | "latency" => types.push(typ.to_string()),
-                Err(err) => return format!("invalid plot type {}", typ),
-            }
-        }
-        PlotTypes(types)
-    }
-}
-
-struct PlotOps(Vec<String>);
-
-impl FromStr for PlotOps {
-    type Err = String;
-
-    fn from_str(s: &str) -> PlotOps {
-        let ops = vec![];
-        for op in s.split(",") {
-            match op {
-                "load" | "set" | "delete" | "get" | "range" | "reverse" => {
-                    // something something
-                    ops.push(op.to_string())
-                }
-                Err(err) => return format!("invalid plot type {}", op),
-            }
-        }
-        PlotOps(ops)
-    }
-}
-
-pub fn do_plot(opt: Opt) -> Result<(), String> {
-    let re1 = Regex::new(r"\[.*\] periodic-stats").unwrap();
-    let re2 = Regex::new(r"\[.*\]").unwrap();
-    for file in opt.plot {
-        let buf = vec![];
-        file.read_to_end(buf).unwrap();
-        let s = buf.from_utf8().unwrap();
-        let lines: Vec<&str> = s.lines().collect();
-        let starts = lines
-            .iter()
-            .enumerate()
-            .filter(|(i, l)| if re1.is_match(*l) { Some(i) } else { None });
-        starts
-            .into_iter()
-            .map(|start| parse_periodic_stats(lines[start..]));
-    }
-}
-
-fn parse_periodic_stats(lines: &Vec<&str>) -> Vec<toml::Value> {
-    lines
-        .iter()
-        .take_while(|line| !re1.is_match(line) && re2.is_match(line))
-        .map(|line| {
-            let value: toml::Value = line.parse().unwrap();
-            value
-        })
-        .collect()
-}
 
 fn latency(
     path: path::PathBuf,
@@ -184,4 +101,207 @@ fn throughput(
     }
 
     Ok(())
+}
+
+#[derive(Debug)]
+pub struct PlotFiles(pub Vec<fs::File>);
+
+impl FromStr for PlotFiles {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut files = vec![];
+        for file_name in s.split(",") {
+            match fs::OpenOptions::new().read(true).open(file_name) {
+                Ok(file) => files.push(file),
+                Err(err) => return Err(format!("invalid file: {}", err)),
+            }
+        }
+        Ok(PlotFiles(files))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PlotTypes(pub Vec<String>);
+
+impl FromStr for PlotTypes {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut types = vec![];
+        for typ in s.split(",") {
+            match typ {
+                "throughput" | "latency" => types.push(typ.to_string()),
+                typ => return Err(format!("invalid plot type {}", typ)),
+            }
+        }
+        Ok(PlotTypes(types))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PlotOps(pub Vec<String>);
+
+impl FromStr for PlotOps {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut ops = vec![];
+        for op in s.split(",") {
+            match op {
+                "load" | "set" | "delete" | "get" | "range" | "reverse" => {
+                    // something something
+                    ops.push(op.to_string())
+                }
+                op => return Err(format!("invalid plot type {}", op)),
+            }
+        }
+        Ok(PlotOps(ops))
+    }
+}
+
+pub fn do_plot(mut opt: Opt) -> Result<(), String> {
+    let re1 = Regex::new(r"\[.*\] (.+) periodic-stats").unwrap();
+    let mut title_initial: Vec<toml::Value> = vec![];
+    let mut title_incrmnt: Vec<toml::Value> = vec![];
+    // TODO: make this 128 element array
+    let mut title_writers: [Option<Vec<toml::Value>>; 32] = Default::default();
+    let mut title_readers: [Option<Vec<toml::Value>>; 32] = Default::default();
+
+    for mut file in opt.plot.0 {
+        let mut buf = vec![];
+        file.read_to_end(&mut buf).unwrap();
+        let s = std::str::from_utf8(&buf).unwrap();
+        let lines: Vec<&str> = s.lines().collect();
+        let starts =
+            lines
+                .iter()
+                .enumerate()
+                .filter_map(|(i, l)| if re1.is_match(*l) { Some(i) } else { None });
+        let items: Vec<(String, usize, toml::Value)> = starts
+            .into_iter()
+            .map(|start| parse_periodic_stats(&lines[start..]))
+            .collect();
+        for (title, thread, value) in items.into_iter() {
+            match title.as_str() {
+                "initial" => title_initial.push(value),
+                "incremental" => title_initial.push(value),
+                title if &title[..6] == "writer" => {
+                    let item = match title_writers[thread].take() {
+                        Some(mut vs) => {
+                            vs.push(value);
+                            Some(vs)
+                        }
+                        None => Some(vec![value]),
+                    };
+                    title_writers[thread] = item;
+                }
+                title if &title[..6] == "readers" => {
+                    let item = match title_writers[thread].take() {
+                        Some(mut vs) => {
+                            vs.push(value);
+                            Some(vs)
+                        }
+                        None => Some(vec![value]),
+                    };
+                    title_writers[thread] = item;
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        let writers: Vec<Vec<toml::Value>> = title_writers
+            .into_iter()
+            .filter_map(|x| x.clone())
+            .collect();
+        let writers = match writers.len() {
+            0 => vec![],
+            1 => writers[0].clone(),
+            _ => {
+                let mut outs = writers[0].clone();
+                for writer in writers[1..].iter() {
+                    for (i, w) in writer.into_iter().enumerate() {
+                        if i >= outs.len() {
+                            outs.push(w.clone())
+                        } else {
+                            outs[i] = merge_toml(outs[i].clone(), w.clone())
+                        }
+                    }
+                }
+                outs
+            }
+        };
+
+        let readers: Vec<Vec<toml::Value>> = title_readers
+            .into_iter()
+            .filter_map(|x| x.clone())
+            .collect();
+        let readers = match readers.len() {
+            0 => vec![],
+            1 => readers[0].clone(),
+            _ => {
+                let mut outs = readers[0].clone();
+                for reader in readers[1..].iter() {
+                    for (i, r) in reader.into_iter().enumerate() {
+                        if i >= outs.len() {
+                            outs.push(r.clone())
+                        } else {
+                            outs[i] = merge_toml(outs[i].clone(), r.clone())
+                        }
+                    }
+                }
+                outs
+            }
+        };
+    }
+    Ok(())
+}
+
+fn merge_toml(one: toml::Value, two: toml::Value) -> toml::Value {
+    use toml::Value::{Integer, Table};
+
+    match (one, two) {
+        (Integer(m), Integer(n)) => toml::Value::Integer(m + n),
+        (Table(x), Table(y)) => {
+            let mut three = toml::map::Map::new();
+            for (name, v) in x.iter() {
+                let v = merge_toml(v.clone(), y.get(name).unwrap().clone());
+                three.insert(name.clone(), v);
+            }
+            toml::Value::Table(three)
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn parse_periodic_stats(lines: &[&str]) -> (String, usize, toml::Value) {
+    // TODO: move this into lazy_static
+    let re1 = Regex::new(r"\[.*\] (.+) periodic-stats").unwrap();
+    let re2 = Regex::new(r"\[.*\]").unwrap();
+    let cap = re1.captures_iter(lines[0]).next().unwrap();
+    let title = cap[1].to_string();
+    let title_parts: Vec<String> = title.split("-").map(|x| x.to_string()).collect();
+    let values: Vec<toml::Value> = lines[1..]
+        .iter()
+        .take_while(|line| !re1.is_match(line) && !re2.is_match(line))
+        .map(|line| {
+            let value: toml::Value = line.parse().unwrap();
+            value
+        })
+        .collect();
+    let mut mv = toml::map::Map::new();
+    for value in values.iter() {
+        for (name, v) in value.as_table().unwrap().iter() {
+            mv.insert(name.clone(), v.clone());
+        }
+    }
+    match title_parts.len() {
+        1 => (title_parts[0].clone(), 0, toml::Value::Table(mv)),
+        2 => (
+            title_parts[0].clone(),
+            title_parts[1].parse().unwrap(),
+            toml::Value::Table(mv),
+        ),
+        _ => unreachable!(),
+    }
 }
