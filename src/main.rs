@@ -1,6 +1,7 @@
 mod generator;
 mod latency;
 mod mod_llrb;
+mod plot;
 // TODO mod mod_lmdb;
 // TODO mod mod_rdms_llrb;
 // TODO mod mod_rdms_mvcc;
@@ -35,6 +36,15 @@ pub struct Opt {
 
     #[structopt(long = "seed", default_value = "0")]
     seed: u128,
+
+    #[structopt(long = "plot", default_value = "ixperf.log")]
+    plot: plot::PlotFiles,
+
+    #[structopt(long = "plot-types", default_value = "throughput,latency")]
+    plot_type: plot::PlotTypes,
+
+    #[structopt(long = "plot-ops", default_value = "load,set,deleted,get")]
+    plot_op: plot::PlotOps,
 
     #[structopt(short = "v", long = "verbose")]
     verbose: bool,
@@ -101,7 +111,16 @@ fn init_logging() {
 fn main() {
     init_logging();
 
-    let p: Profile = match Opt::from_args().try_into() {
+    let ops = Opt::from_args();
+    if p.plot.len() > 0 {
+        match plot::do_plot(opts) {
+            Ok(_) => (),
+            Err(err) => error!(target: "main  ", "plot-failed: {}", err),
+        }
+        std::process::exit(1);
+    };
+
+    let p: Profile = match opts.try_into() {
         Ok(p) => p,
         Err(err) => {
             error!(target: "main  ", "invalid args/profile: {}", err);

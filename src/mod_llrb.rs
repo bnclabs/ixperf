@@ -65,7 +65,7 @@ where
     let mut local_stats = stats::Ops::new();
     let gen = InitialLoad::<K, V>::new(p.g.clone());
     let mut start = SystemTime::now();
-    for (i, cmd) in gen.enumerate() {
+    for (_i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Load { key, value } => {
                 local_stats.load.sample_start();
@@ -101,7 +101,7 @@ where
     let mut local_stats = stats::Ops::new();
     let gen = IncrementalLoad::<K, V>::new(p.g.clone());
     let mut start = SystemTime::now();
-    for (i, cmd) in gen.enumerate() {
+    for (_i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Set { key, value } => {
                 local_stats.set.sample_start();
