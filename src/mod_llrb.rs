@@ -1,6 +1,7 @@
 use std::time::{Duration, SystemTime};
 
 use llrb_index::Llrb;
+use log::info;
 
 use crate::generator::{Cmd, IncrementalLoad, InitialLoad, RandomKV};
 use crate::stats;
@@ -30,12 +31,18 @@ where
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
     let mut index: Llrb<K, V> = Llrb::new("ixperf");
-    println!("node overhead for llrb: {}", index.stats().node_size());
+    info!(
+        target: "llrbix",
+        "node overhead for llrb: {}", index.stats().node_size()
+    );
 
     let start = SystemTime::now();
     do_initial_load(&mut index, &p);
     let dur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
-    println!("initial-load {} items in {:?}", index.len(), dur);
+    info!(
+        target: "llrbix",
+        "initial-load completed {} items in {:?}", index.len(), dur
+    );
 
     do_incremental(&mut index, &p);
     validate(index, p);
@@ -50,13 +57,14 @@ where
         return;
     }
 
+    info!(
+        target: "llrbix",
+        "INITIAL LOAD for type <{},{}>", p.key_type, p.val_type
+    );
     let mut full_stats = stats::Ops::new();
     let mut local_stats = stats::Ops::new();
-    println!(
-        "\n==== INITIAL LOAD for type <{},{}> ====",
-        p.key_type, p.val_type
-    );
     let gen = InitialLoad::<K, V>::new(p.g.clone());
+    let mut start = SystemTime::now();
     for (i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Load { key, value } => {
@@ -66,13 +74,14 @@ where
             }
             _ => unreachable!(),
         };
-        if ((i + 1) % crate::LOG_BATCH) == 0 && p.verbose {
-            println!("initial load {}", local_stats);
+        if start.elapsed().unwrap().as_nanos() > 1_000_000_000 {
+            info!(target: "llrbix", "periodic-stats {}", local_stats);
             full_stats.merge(&local_stats);
             local_stats = stats::Ops::new();
+            start = SystemTime::now();
         }
     }
-    println!("initial load {}", full_stats)
+    info!(target: "llrbix", "stats \n{:?}\n", full_stats);
 }
 
 fn do_incremental<K, V>(index: &mut Llrb<K, V>, p: &Profile)
@@ -84,13 +93,14 @@ where
         return;
     }
 
+    info!(
+        target: "llrbix",
+        "INCREMENTAL LOAD for type <{},{}>", p.key_type, p.val_type
+    );
     let mut full_stats = stats::Ops::new();
     let mut local_stats = stats::Ops::new();
-    println!(
-        "\n==== INCREMENTAL LOAD for type <{},{}> ====",
-        p.key_type, p.val_type
-    );
     let gen = IncrementalLoad::<K, V>::new(p.g.clone());
+    let mut start = SystemTime::now();
     for (i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Set { key, value } => {
@@ -127,14 +137,15 @@ where
             }
             _ => unreachable!(),
         };
-        if ((i + 1) % crate::LOG_BATCH) == 0 && p.verbose {
-            println!("incremental load {}", local_stats);
+        if start.elapsed().unwrap().as_nanos() > 1_000_000_000 {
+            info!(target: "llrbix", "periodic-stats {}", local_stats);
             full_stats.merge(&local_stats);
             local_stats = stats::Ops::new();
+            start = SystemTime::now();
         }
     }
 
-    println!("incremental load {}", full_stats);
+    info!(target: "llrbix", "stats - {:?}", local_stats);
 }
 
 fn validate<K, V>(index: Llrb<K, V>, _p: Profile)

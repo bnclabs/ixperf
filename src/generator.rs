@@ -7,6 +7,7 @@ use std::{
     time::SystemTime,
 };
 
+use log::info;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use toml;
 
@@ -41,12 +42,12 @@ impl TryFrom<toml::Value> for GenOptions {
     type Error = String;
     fn try_from(value: toml::Value) -> Result<GenOptions, String> {
         let mut gen_opts: GenOptions = Default::default();
-        let section = &value["ixperf"];
+        let section = &value["generator"];
         for (name, value) in section.as_table().unwrap().iter() {
             match name.as_str() {
                 "seed" => gen_opts.seed = utils::toml_to_u128(value),
                 "key_size" => gen_opts.key_size = utils::toml_to_usize(value),
-                "val_size" => gen_opts.val_size = utils::toml_to_usize(value),
+                "value_size" => gen_opts.val_size = utils::toml_to_usize(value),
                 "channel_size" => gen_opts.channel_size = utils::toml_to_usize(value),
                 "loads" => gen_opts.loads = utils::toml_to_usize(value),
                 "sets" => gen_opts.sets = utils::toml_to_usize(value),
@@ -108,9 +109,9 @@ where
     }
 
     let elapsed = start.elapsed().unwrap();
-    println!(
-        "gen--> initial_load(): {:10} items in {:?}",
-        g.loads, elapsed
+    info!(
+        target: "genrtr",
+        "initial_load: {} items in {:?}", g.loads, elapsed
     );
 }
 
@@ -181,9 +182,9 @@ where
 
     let total = g.gets + g.iters + g.ranges + g.reverses;
     let elapsed = start.elapsed().unwrap();
-    println!(
-        "gen--> incremental_read(): {:10} reads in {:?}",
-        total, elapsed
+    info!(
+        target: "genrtr",
+        "incremental_read: {:10} reads in {:?}", total, elapsed
     );
 }
 
@@ -248,9 +249,9 @@ where
 
     let total = g.gets + g.iters + g.ranges + g.reverses;
     let elapsed = start.elapsed().unwrap();
-    println!(
-        "gen--> incremental_write(): {:10} reads in {:?}",
-        total, elapsed
+    info!(
+        target: "genrtr",
+        "incremental_write: {:10} reads in {:?}", total, elapsed
     );
 }
 
@@ -329,9 +330,9 @@ where
     let total = g.gets + g.iters + g.ranges + g.reverses // reads
     + g.sets + g.deletes; // writes
     let elapsed = start.elapsed().unwrap();
-    println!(
-        "gen--> incremental_load(): {:10} reads in {:?}",
-        total, elapsed
+    info!(
+        target: "genrtr",
+        "incremental_load: {:10} reads in {:?}", total, elapsed
     );
 }
 

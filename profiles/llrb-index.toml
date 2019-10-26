@@ -3,19 +3,18 @@
 index = "llrb-index"
 
 # Key-type for the index.
-key_type = "i64"
+key_type = "bytes"
 
 # Value-type for the index
-value_type = "i64"
+value_type = "bytes"
+
+[generator]
 
 # Block size if key-type is vector-of-bytes.
-key_size = 64
+key_size = 20
 
 # Block size if key-type is vector-of-bytes.
-value_size = 64
-
-# statistics output format
-json = false
+value_size = 400
 
 # Seed for randomization.
 seed = 0
@@ -24,7 +23,7 @@ seed = 0
 loads = 1_000_000
 
 # Total number of incremental set operations.
-sets = 0
+sets = 1_000_000
 
 # Total number of incremental delete operations.
 deletes = 0
@@ -40,6 +39,9 @@ ranges = 0
 
 # Total number of reverse iterations between an upper bound and lower bound.
 reverses = 0
+
+# channel size to use between generator thread and loader thread.
+channel_size = 100_000
 
 [llrb-index]
 # no other options other than the [ixperf]

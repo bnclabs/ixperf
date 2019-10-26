@@ -13,7 +13,7 @@ impl Op {
     pub fn new(name: &str) -> Op {
         Op {
             name: name.to_string(),
-            latency: Default::default(),
+            latency: Latency::new(name),
             count: Default::default(),
             items: Default::default(),
         }
@@ -86,43 +86,51 @@ impl fmt::Display for Op {
         }
 
         match self.name.as_str() {
-            "load" => write!(
+            "load" | "set" => write!(
                 f,
-                "load = {{ ops={}, updates={}, latency={} }}",
-                self.count, self.items, self.latency
+                "{} = {{ ops={}, updates={}, latency={} }}",
+                self.name, self.count, self.items, self.latency
             ),
-            "set" => write!(
+            "delete" | "get" => write!(
                 f,
-                "set = {{ ops={}, updates={}, latency={} }}",
-                self.count, self.items, self.latency
+                "{} = {{ ops={}, missing={}, latency={} }}",
+                self.name, self.count, self.items, self.latency
             ),
-            "delete" => write!(
+            "iter" | "range" | "reverse" => write!(
                 f,
-                "delete = {{ ops={}, updates={}, latency={} }}",
-                self.count, self.items, self.latency
-            ),
-            "get" => write!(
-                f,
-                "get = {{ ops={}, updates={}, latency={} }}",
-                self.count, self.items, self.latency
-            ),
-            "iter" => write!(
-                f,
-                "iter = {{ ops={}, updates={}, latency={} }}",
-                self.count, self.items, self.latency
-            ),
-            "range" => write!(
-                f,
-                "range = {{ ops={}, updates={}, latency={} }}",
-                self.count, self.items, self.latency
-            ),
-            "reverse" => write!(
-                f,
-                "reverse = {{ ops={}, updates={}, latency={} }}",
-                self.count, self.items, self.latency
+                "{} = {{ ops={}, items={}, latency={} }}",
+                self.name, self.count, self.items, self.latency
             ),
             _ => unreachable!(),
         }
+    }
+}
+
+impl fmt::Debug for Op {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        if self.count == 0 {
+            return Ok(());
+        }
+
+        match self.name.as_str() {
+            "load" | "set" => write!(
+                f,
+                "{} = {{ ops={}, updates={} }}\n",
+                self.name, self.count, self.items,
+            )?,
+            "delete" | "get" => write!(
+                f,
+                "{} = {{ ops={}, missing={} }}",
+                self.name, self.count, self.items,
+            )?,
+            "iter" | "range" | "reverse" => write!(
+                f,
+                "{} = {{ ops={}, items={} }}",
+                self.name, self.count, self.items,
+            )?,
+            _ => unreachable!(),
+        }
+        write!(f, "{:?}", self.latency)
     }
 }
 
@@ -197,12 +205,54 @@ impl Ops {
 
 impl fmt::Display for Ops {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{}\n", self.load).unwrap();
-        write!(f, "{}\n", self.set).unwrap();
-        write!(f, "{}\n", self.delete).unwrap();
-        write!(f, "{}\n", self.get).unwrap();
-        write!(f, "{}\n", self.iter).unwrap();
-        write!(f, "{}\n", self.range).unwrap();
-        write!(f, "{}\n", self.reverse)
+        if self.load.count > 0 {
+            write!(f, "{}", self.load)?;
+        }
+        if self.set.count > 0 {
+            write!(f, "\n{}", self.set)?;
+        }
+        if self.delete.count > 0 {
+            write!(f, "\n{}", self.delete)?;
+        }
+        if self.get.count > 0 {
+            write!(f, "\n{}", self.get)?;
+        }
+        if self.iter.count > 0 {
+            write!(f, "\n{}", self.iter)?;
+        }
+        if self.range.count > 0 {
+            write!(f, "\n{}", self.range)?;
+        }
+        if self.reverse.count > 0 {
+            write!(f, "\n{}", self.reverse)?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Debug for Ops {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        if self.load.count > 0 {
+            write!(f, "{:?}", self.load)?;
+        }
+        if self.set.count > 0 {
+            write!(f, "\n{:?}", self.set)?;
+        }
+        if self.delete.count > 0 {
+            write!(f, "\n{:?}", self.delete)?;
+        }
+        if self.get.count > 0 {
+            write!(f, "\n{:?}", self.get)?;
+        }
+        if self.iter.count > 0 {
+            write!(f, "\n{:?}", self.iter)?;
+        }
+        if self.range.count > 0 {
+            write!(f, "\n{:?}", self.range)?;
+        }
+        if self.reverse.count > 0 {
+            write!(f, "\n{:?}", self.reverse)?;
+        }
+        Ok(())
     }
 }

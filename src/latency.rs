@@ -4,6 +4,7 @@ use std::{
 };
 
 pub struct Latency {
+    name: String,
     samples: usize,
     total: Duration,
     start: SystemTime,
@@ -15,6 +16,7 @@ pub struct Latency {
 impl Default for Latency {
     fn default() -> Latency {
         let mut lat = Latency {
+            name: "".to_string(),
             samples: Default::default(),
             total: Default::default(),
             start: SystemTime::now(),
@@ -28,6 +30,12 @@ impl Default for Latency {
 }
 
 impl Latency {
+    pub fn new(name: &str) -> Latency {
+        let mut latency: Latency = Default::default();
+        latency.name = name.to_string();
+        latency
+    }
+
     pub fn start(&mut self) {
         self.samples += 1;
         self.start = SystemTime::now();
@@ -106,7 +114,7 @@ impl fmt::Display for Latency {
         let props: Vec<String> = self
             .to_percentiles()
             .into_iter()
-            .map(|(perc, latn)| format!("{}={}", perc, (latn * 100)))
+            .map(|(perc, latn)| format!(r#""{}"={}"#, perc, (latn * 100)))
             .collect();
         let latencies = props.join(", ");
         write!(
@@ -123,5 +131,36 @@ impl fmt::Display for Latency {
             self.to_mean(),
             latencies,
         )
+    }
+}
+
+impl fmt::Debug for Latency {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let total = self.total.as_nanos();
+        let rate = (self.samples as f64) / (total as f64 / 1_000_000_000.0);
+        let props: Vec<String> = self
+            .to_percentiles()
+            .into_iter()
+            .map(|(perc, latn)| {
+                let latn = (latn * 100) as u64;
+                format!(r#""{}"={:?}"#, perc, Duration::from_nanos(latn))
+            })
+            .collect();
+        let latencies = props.join(", ");
+        write!(
+            f,
+            "{}.latency = {{ n={}, min={:?}, mean={:?}, max={:?} }}\n",
+            self.name,
+            self.samples,
+            Duration::from_nanos(self.min as u64),
+            Duration::from_nanos(self.to_mean() as u64),
+            Duration::from_nanos(self.max as u64)
+        )?;
+        write!(
+            f,
+            "{}.latency.percentiles = {{ {} }}\n",
+            self.name, latencies
+        )?;
+        write!(f, "rate: {}/sec", rate as u64)
     }
 }

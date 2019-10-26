@@ -11,9 +11,12 @@ mod utils;
 use std::{
     convert::{TryFrom, TryInto},
     ffi,
+    io::Write,
 };
 
+use env_logger;
 use jemallocator;
+use log::{self, error, info};
 use rand::random;
 use structopt::StructOpt;
 use toml;
@@ -24,8 +27,6 @@ use toml;
 
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
-
-const LOG_BATCH: usize = 1_000_000;
 
 #[derive(Debug, StructOpt, Clone)]
 pub struct Opt {
@@ -67,23 +68,63 @@ impl TryFrom<Opt> for Profile {
     }
 }
 
-fn main() {
-    let p: Profile = Opt::from_args().try_into().expect("invalid args/profile");
+fn init_logging() {
+    let mut builder = env_logger::Builder::from_default_env();
+    builder
+        .target(env_logger::Target::Stdout)
+        .format(|buf, record| {
+            let mut level_style = buf.default_level_style(record.level());
+            let color = match record.level() {
+                log::Level::Error => env_logger::fmt::Color::Red,
+                log::Level::Warn => env_logger::fmt::Color::Yellow,
+                log::Level::Info => env_logger::fmt::Color::White,
+                log::Level::Debug => env_logger::fmt::Color::Cyan,
+                log::Level::Trace => env_logger::fmt::Color::Green,
+            };
+            level_style.set_color(color);
+            if record.level() == log::Level::Info {
+                level_style.set_bold(true);
+            }
+            writeln!(
+                buf,
+                "[{} {} {}] {}",
+                level_style.value(buf.timestamp_millis()),
+                level_style.value(record.level()),
+                level_style.value(record.target()),
+                record.args()
+            )
+        })
+        .filter(None, log::LevelFilter::Info)
+        .init();
+}
 
-    println!("starting with seed = {}", p.g.seed);
+fn main() {
+    init_logging();
+
+    let p: Profile = match Opt::from_args().try_into() {
+        Ok(p) => p,
+        Err(err) => {
+            error!(target: "main  ", "invalid args/profile: {}", err);
+            std::process::exit(1);
+        }
+    };
+    info!(target: "main  ", "starting with seed = {}", p.g.seed);
 
     // TODO - enable this via feature gating.
     // use cpuprofiler::PROFILER;
     // PROFILER.lock().unwrap().start("./ixperf.prof").unwrap();
 
-    match p.index.as_str() {
+    let res = match p.index.as_str() {
         "llrb-index" => mod_llrb::do_llrb_index(p),
         //"rdms-llrb" => do_rdms_llrb(p),
         //"rdms-mvcc" => do_rdms_mvcc(p),
         //"rdms-robt" => do_rdms_robt(p),
-        _ => panic!("unsupported index-type {}", p.index),
-    }
-    .expect("failed do_llrb_index()");
+        _ => Err(format!("unsupported index-type {}", p.index)),
+    };
+    match res {
+        Err(err) => error!(target: "main  ", "ixperf failed: {}", err),
+        _ => (),
+    };
 
     // PROFILER.lock().unwrap().stop().unwrap();
 }
