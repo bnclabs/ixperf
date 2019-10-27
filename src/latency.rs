@@ -121,7 +121,7 @@ impl fmt::Display for Latency {
             f,
             concat!(
                 "{{ n={}, elapsed={}, rate={}, min={}, ",
-                "mean={}, max={}, latencies={{ {} }}"
+                "mean={}, max={}, latencies={{ {} }} }}"
             ),
             self.samples,
             self.total.as_nanos(),

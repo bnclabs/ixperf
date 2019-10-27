@@ -37,14 +37,8 @@ pub struct Opt {
     #[structopt(long = "seed", default_value = "0")]
     seed: u128,
 
-    #[structopt(long = "plot", default_value = "ixperf.log")]
+    #[structopt(long = "plot", default_value = "")]
     plot: plot::PlotFiles,
-
-    #[structopt(long = "plot-types", default_value = "throughput,latency")]
-    plot_type: plot::PlotTypes,
-
-    #[structopt(long = "plot-ops", default_value = "load,set,deleted,get")]
-    plot_op: plot::PlotOps,
 
     #[structopt(short = "v", long = "verbose")]
     verbose: bool,

@@ -44,7 +44,7 @@ where
         "initial-load completed {} items in {:?}", index.len(), dur
     );
 
-    do_incremental(&mut index, &p);
+    // TODO: do_incremental(&mut index, &p);
     validate(index, p);
 }
 
@@ -75,13 +75,13 @@ where
             _ => unreachable!(),
         };
         if start.elapsed().unwrap().as_nanos() > 1_000_000_000 {
-            info!(target: "llrbix", "periodic-stats {}", local_stats);
+            info!(target: "llrbix", "initial periodic-stats {}", local_stats);
             full_stats.merge(&local_stats);
             local_stats = stats::Ops::new();
             start = SystemTime::now();
         }
     }
-    info!(target: "llrbix", "stats \n{:?}\n", full_stats);
+    info!(target: "llrbix", "initial stats \n{:?}\n", full_stats);
 }
 
 fn do_incremental<K, V>(index: &mut Llrb<K, V>, p: &Profile)
@@ -138,14 +138,14 @@ where
             _ => unreachable!(),
         };
         if start.elapsed().unwrap().as_nanos() > 1_000_000_000 {
-            info!(target: "llrbix", "periodic-stats {}", local_stats);
+            info!(target: "llrbix", "incremental periodic-stats {}", local_stats);
             full_stats.merge(&local_stats);
             local_stats = stats::Ops::new();
             start = SystemTime::now();
         }
     }
 
-    info!(target: "llrbix", "stats - {:?}", local_stats);
+    info!(target: "llrbix", "incremental stats - {:?}", local_stats);
 }
 
 fn validate<K, V>(index: Llrb<K, V>, _p: Profile)
