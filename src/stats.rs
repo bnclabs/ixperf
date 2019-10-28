@@ -170,6 +170,16 @@ impl Ops {
             + self.reverse.count
     }
 
+    pub fn is_sec_elapsed(&self) -> bool {
+        let mut elapsed = self.load.latency.elapsed();
+        elapsed += self.set.latency.elapsed();
+        elapsed += self.delete.latency.elapsed();
+        elapsed += self.get.latency.elapsed();
+        elapsed += self.range.latency.elapsed();
+        elapsed += self.reverse.latency.elapsed();
+        (elapsed * 8) > 1_000_000_000
+    }
+
     pub fn merge(&mut self, other: &Self) {
         self.load.merge(&other.load);
         self.set.merge(&other.set);

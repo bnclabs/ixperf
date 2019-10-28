@@ -81,7 +81,6 @@ where
     let mut fstats = stats::Ops::new();
     let mut lstats = stats::Ops::new();
     let gen = InitialLoad::<K, V>::new(p.g.clone());
-    let mut start = SystemTime::now();
     for (_i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Load { key, value } => {
@@ -91,11 +90,10 @@ where
             }
             _ => unreachable!(),
         };
-        if start.elapsed().unwrap().as_nanos() > 1_000_000_000 && p.verbose {
+        if p.verbose && lstats.is_sec_elapsed() {
             info!(target: "llrbix", "initial periodic-stats\n{}", lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
-            start = SystemTime::now();
         }
     }
     info!(target: "llrbix", "initial stats\n{:?}\n", fstats);
@@ -117,7 +115,6 @@ where
     let mut fstats = stats::Ops::new();
     let mut lstats = stats::Ops::new();
     let gen = IncrementalLoad::<K, V>::new(p.g.clone());
-    let mut start = SystemTime::now();
     for (_i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Set { key, value } => {
@@ -147,11 +144,10 @@ where
             }
             _ => unreachable!(),
         };
-        if start.elapsed().unwrap().as_nanos() > 1_000_000_000 && p.verbose {
+        if p.verbose && lstats.is_sec_elapsed() {
             info!(target: "llrbix", "incremental periodic-stats\n{}", lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
-            start = SystemTime::now();
         }
     }
 

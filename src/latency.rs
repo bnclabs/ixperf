@@ -55,6 +55,10 @@ impl Latency {
         self.total += Duration::from_nanos(elapsed as u64);
     }
 
+    pub fn elapsed(&self) -> u64 {
+        self.total.as_nanos() as u64
+    }
+
     pub fn to_percentiles(&self) -> Vec<(u8, u128)> {
         let mut percentiles: Vec<(u8, u128)> = vec![];
         let (mut acc, mut prev_perc) = (0_f64, 90_u8);
