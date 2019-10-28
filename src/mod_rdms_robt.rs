@@ -103,23 +103,18 @@ where
     //for (i, cmd) in gen.enumerate() {
     //    match cmd {
     //        Cmd::Get { key } => {
-    //            ostats.get.sample_start();
+    //            ostats.get.sample_start(false);
     //            let items = r.get(&key).ok().map_or(1, |_| 0);
     //            ostats.get.sample_end(items);
     //        }
-    //        Cmd::Iter => {
-    //            let iter = r.iter().unwrap();
-    //            ostats.iter.sample_start();
-    //            ostats.iter.sample_end(iter.fold(0, |acc, _| acc + 1));
-    //        }
     //        Cmd::Range { low, high } => {
     //            let iter = r.range((low, high)).unwrap();
-    //            ostats.range.sample_start();
+    //            ostats.range.sample_start(true);
     //            ostats.range.sample_end(iter.fold(0, |acc, _| acc + 1));
     //        }
     //        Cmd::Reverse { low, high } => {
     //            let iter = r.reverse((low, high)).unwrap();
-    //            ostats.reverse.sample_start();
+    //            ostats.reverse.sample_start(true);
     //            ostats.reverse.sample_end(iter.fold(0, |acc, _| acc + 1));
     //        }
     //        _ => unreachable!(),

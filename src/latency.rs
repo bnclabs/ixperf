@@ -70,8 +70,16 @@ impl Latency {
         percentiles
     }
 
+    pub fn to_samples(&self) -> usize {
+        self.samples
+    }
+
     pub fn to_mean(&self) -> u128 {
-        self.total.as_nanos() / (self.samples as u128)
+        if self.samples > 0 {
+            self.total.as_nanos() / (self.samples as u128)
+        } else {
+            0
+        }
     }
 
     pub fn merge(&mut self, other: &Self) {
@@ -109,6 +117,10 @@ impl Latency {
 
 impl fmt::Display for Latency {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        if self.samples == 0 {
+            return Ok(());
+        }
+
         let total = self.total.as_nanos();
         let rate = (self.samples as f64) / (total as f64 / 1_000_000_000.0);
         let props: Vec<String> = self

@@ -4,6 +4,7 @@ use log::info;
 use plotters::{
     prelude::*,
     style::colors::{BLACK, BLUE, CYAN, GREEN, MAGENTA, RED, WHITE},
+    style::RGBColor,
 };
 use regex::Regex;
 
@@ -27,84 +28,156 @@ impl PlotData {
         fs::remove_dir_all(&path_dir).ok();
         fs::create_dir_all(&path_dir).expect("creating the plot dir");
 
-        // initial plot, throughput
-        let file = path_dir.join("initial-load-throughput.png");
-        let values: Vec<u64> = self
-            .title_initial
-            .iter()
-            .filter_map(|v| Self::get_rate("load", v))
-            .collect();
-        do_render(
-            &file,
-            "initial-load-throughput",
-            vec!["load"],
-            "Seconds",
-            "Throughput Kilo-ops / Sec",
-            vec![values],
-        );
-        // initial plot, latency
-        let file = path_dir.join("initial-load-latency.png");
-        let values: Vec<u64> = self
-            .title_initial
-            .iter()
-            .filter_map(|v| Self::get_lat_98("load", v))
-            .collect();
-        do_render(
-            &file,
-            "initial-load-latency 98th percentile",
-            vec!["load"],
-            "Seconds",
-            "Latency in uS",
-            vec![values],
-        );
+        let x_axis = "Seconds";
+        let y_axis1 = "Throughput kilo-ops / Sec";
+        let y_axis2 = "Latency in uS";
+        let plots = [
+            (
+                "initial-load-throughput.png",
+                "initial-load-throughput",
+                ["load"].to_vec(),
+                x_axis,
+                y_axis1,
+                [Self::get_rate("load", &self.title_initial)].to_vec(),
+            ),
+            (
+                "initial-load-latency.png",
+                "initial-load-latency 98th percentile",
+                ["load"].to_vec(),
+                x_axis,
+                y_axis2,
+                [Self::get_lat_98("load", &self.title_initial)].to_vec(),
+            ),
+            (
+                "incremental-ops-throughput.png",
+                "incremental-ops-throughput",
+                ["set", "delete", "get"].to_vec(),
+                x_axis,
+                y_axis1,
+                [
+                    Self::get_rate("set", &self.title_incrmnt),
+                    Self::get_rate("delete", &self.title_incrmnt),
+                    Self::get_rate("get", &self.title_incrmnt),
+                ]
+                .to_vec(),
+            ),
+            (
+                "incremental-ops-latency.png",
+                "incremental-ops-latency 98th percentile",
+                ["set", "delete", "get"].to_vec(),
+                x_axis,
+                y_axis2,
+                [
+                    Self::get_lat_98("set", &self.title_incrmnt),
+                    Self::get_lat_98("delete", &self.title_incrmnt),
+                    Self::get_lat_98("get", &self.title_incrmnt),
+                ]
+                .to_vec(),
+            ),
+            (
+                "incremental-range-throughput.png",
+                "incremental-range-throughput",
+                ["range", "reverse", "range-items", "reverse-items"].to_vec(),
+                x_axis,
+                y_axis1,
+                [
+                    Self::get_rate("range", &self.title_incrmnt),
+                    Self::get_rate("reverse", &self.title_incrmnt),
+                    Self::get_items("range", &self.title_incrmnt),
+                    Self::get_items("reverse", &self.title_incrmnt),
+                ]
+                .to_vec(),
+            ),
+            (
+                "incremental-range-latency.png",
+                "incremental-range-latency 98th percentile",
+                ["range", "reverse"].to_vec(),
+                x_axis,
+                y_axis2,
+                [
+                    Self::get_lat_98("range", &self.title_incrmnt),
+                    Self::get_lat_98("reverse", &self.title_incrmnt),
+                ]
+                .to_vec(),
+            ),
+        ];
+
+        // incremental plot, throughput
+        for arg in plots.into_iter() {
+            let dir = &path_dir.join(arg.0);
+            do_render(dir, arg.1, &arg.2, arg.3, arg.4, &arg.5);
+        }
     }
 
-    fn get_rate(op_name: &str, v: &toml::Value) -> Option<u64> {
-        match v.as_table() {
-            Some(table) => match table.get(op_name) {
-                Some(table) => {
+    fn get_rate(op_name: &str, vs: &Vec<toml::Value>) -> Vec<u64> {
+        let mut out = vec![];
+        for v in vs {
+            if let Some(table) = v.as_table() {
+                if let Some(table) = table.get(op_name) {
                     let v = table["latency"]["rate"].as_integer().unwrap();
-                    Some((v as u64) / 1000)
+                    out.push((v as u64) / 1000);
                 }
-                None => None,
-            },
-            None => None,
+            }
         }
+        out
     }
 
-    fn get_lat_98(op_name: &str, v: &toml::Value) -> Option<u64> {
-        match v.as_table() {
-            Some(table) => match table.get(op_name) {
-                Some(table) => {
-                    let v = table["latency"]["latencies"]["98"].as_integer().unwrap();
-                    Some(v as u64)
+    fn get_items(op_name: &str, vs: &Vec<toml::Value>) -> Vec<u64> {
+        let mut out = vec![];
+        for v in vs {
+            if let Some(table) = v.as_table() {
+                if let Some(table) = table.get(op_name) {
+                    let v = table["items"].as_integer().unwrap();
+                    out.push(v as u64);
                 }
-                None => None,
-            },
-            None => None,
+            }
         }
+        out
+    }
+
+    fn get_lat_98(op_name: &str, vs: &Vec<toml::Value>) -> Vec<u64> {
+        let mut out = vec![];
+        for v in vs {
+            if let Some(table) = v.as_table() {
+                if let Some(t) = table.get(op_name) {
+                    let t = t["latency"]["latencies"].as_table().unwrap();
+                    let v = if t.contains_key("98") {
+                        &t["98"]
+                    } else if t.contains_key("99") {
+                        &t["99"]
+                    } else {
+                        &t["100"]
+                    };
+                    out.push(v.as_integer().unwrap() as u64);
+                }
+            }
+        }
+        out
     }
 }
 
 fn do_render(
     file: &path::PathBuf,
     title: &str,
-    names: Vec<&str>,
+    names: &Vec<&str>,
     x_desc: &str,
     y_desc: &str,
-    values: Vec<Vec<u64>>,
+    valuess: &Vec<Vec<u64>>,
 ) {
     info!(target: "plot", "plotting throughput for {} at {:?}", title, file);
 
-    let colors = |name| match name {
-        "load" => &BLUE,
-        "set" => &GREEN,
-        "delete" => &RED,
-        "get" => &BLACK,
-        "range" => &MAGENTA,
-        "reverse" => &CYAN,
-        _ => unreachable!(),
+    let color_for = move |name| match name {
+        "load" => BLUE,
+        "set" => GREEN,
+        "delete" => RED,
+        "get" => BLACK,
+        "range" => MAGENTA,
+        "reverse" => CYAN,
+        "range-items" => MAGENTA,
+        "reverse-items" => CYAN,
+        name => panic!("unreachable {}", name),
     };
+    let clrs: Vec<RGBColor> = names.iter().map(|n| color_for(n)).collect();
 
     fs::OpenOptions::new()
         .create_new(true)
@@ -114,38 +187,52 @@ fn do_render(
     let root = BitMapBackend::new(&file, (1024, 768)).into_drawing_area();
     root.fill(&WHITE).expect("root file");
 
-    for (i, values) in values.into_iter().enumerate() {
-        let (xmin, xmax) = (0_u64, values.len() as u64);
-        let (ymin, ymax) = (0_u64, values.iter().max().cloned().unwrap_or(0));
-        let ymax = ymax + (ymax / 5);
-        let mut cc = ChartBuilder::on(&root)
-            .x_label_area_size(40)
-            .y_label_area_size(60)
-            .margin(10)
-            .caption(&title, ("Arial", 30).into_font())
-            .build_ranged(xmin..xmax, ymin..ymax)
-            .expect("chard builder");
-
-        cc.configure_mesh()
-            .line_style_2(&WHITE)
-            .label_style(("Arial", 15).into_font())
-            .x_desc(x_desc)
-            .y_desc(y_desc)
-            .axis_desc_style(("Arial", 20).into_font())
-            .draw()
-            .expect("configure mesh");
-
-        cc.draw_series(LineSeries::new(
-            values
-                .into_iter()
-                .enumerate()
-                .map(|(j, value)| (j as u64, value)),
-            colors(names[i]),
-        ))
-        .expect("draw series")
-        .label(names[i])
-        .legend(|(x, y)| Path::new(vec![(x, y), (x + 20, y)], colors(names[i])));
+    let x_maxes: Vec<usize> = valuess.iter().map(|values| values.len()).collect();
+    let (xmin, xmax) = (0_u64, x_maxes.into_iter().max().unwrap_or(0) as u64);
+    let y_maxes: Vec<u64> = valuess
+        .clone()
+        .into_iter()
+        .map(|v| v.into_iter().max().unwrap_or(0))
+        .collect();
+    let (ymin, ymax) = (0_u64, y_maxes.into_iter().max().unwrap_or(0));
+    let ymax = ymax + (ymax / 5);
+    let mut chart = ChartBuilder::on(&root)
+        .x_label_area_size(40)
+        .y_label_area_size(70)
+        .margin(10)
+        .caption(&title, ("Arial", 30).into_font())
+        .build_ranged(xmin..xmax, ymin..ymax)
+        .expect("chard builder");
+    chart
+        .configure_mesh()
+        .line_style_2(&WHITE)
+        .label_style(("Arial", 15).into_font())
+        .x_desc(x_desc)
+        .y_desc(y_desc)
+        .axis_desc_style(("Arial", 20).into_font())
+        .draw()
+        .expect("configure mesh");
+    for (i, values) in valuess.into_iter().enumerate() {
+        let RGBColor(x, y, z) = clrs[i];
+        let clr1 = RGBColor(x, y, z);
+        let clr2 = RGBColor(x, y, z);
+        chart
+            .draw_series(LineSeries::new(
+                values
+                    .iter()
+                    .enumerate()
+                    .map(|(j, value)| (j as u64, *value)),
+                &clr1,
+            ))
+            .expect("draw series")
+            .label(names[i].to_string())
+            .legend(move |(x, y)| Path::new(vec![(x, y), (x + 20, y)], &clr2));
     }
+    chart
+        .configure_series_labels()
+        .background_style(&RGBColor(255, 255, 255))
+        .draw()
+        .expect("draw label");
 }
 
 #[derive(Debug)]
@@ -213,7 +300,7 @@ impl FromStr for PlotOps {
 }
 
 pub fn do_plot(opt: Opt) -> Result<(), String> {
-    let re1 = Regex::new(r"\[.*\] (.+) periodic-stats (.+)").unwrap();
+    let re1 = Regex::new(r"\[.*\] (.+) periodic-stats").unwrap();
     let mut title_initial: Vec<toml::Value> = vec![];
     let mut title_incrmnt: Vec<toml::Value> = vec![];
     let mut title_writers: Vec<toml::Value> = vec![];
@@ -222,11 +309,15 @@ pub fn do_plot(opt: Opt) -> Result<(), String> {
     let mut writers: Vec<Vec<toml::Value>> = vec![];
     let mut readers: Vec<Vec<toml::Value>> = vec![];
 
-    let merge_thread = |threads: &mut Vec<Vec<toml::Value>>| -> Option<toml::Value> {
-        match threads.iter().any(|t| t.len() == 0) {
+    let merge_thread = |ts: &mut Vec<Vec<toml::Value>>| -> Option<toml::Value> {
+        match ts.iter().any(|t| t.len() == 0) {
             true => None,
             false => {
-                let vs: Vec<toml::Value> = threads.iter_mut().map(|t| t.remove(0)).collect();
+                let vs: Vec<toml::Value> = ts
+                    // something
+                    .iter_mut()
+                    .map(|t| t.remove(0))
+                    .collect();
                 let value = vs[1..]
                     .iter()
                     .fold(vs[0].clone(), |a, v| merge_toml(a, v.clone()));
@@ -247,7 +338,7 @@ pub fn do_plot(opt: Opt) -> Result<(), String> {
             .collect();
         let items: Vec<(String, usize, toml::Value)> = line_nos
             .into_iter()
-            .map(|line_no| parse_periodic_stats(&lines[line_no]))
+            .map(|line_no| parse_periodic_stats(&lines[line_no..]))
             .collect();
         let max_writers = items
             .iter()
@@ -304,20 +395,23 @@ fn merge_toml(one: toml::Value, two: toml::Value) -> toml::Value {
     }
 }
 
-fn parse_periodic_stats(line: &str) -> (String, usize, toml::Value) {
+fn parse_periodic_stats(lines: &[&str]) -> (String, usize, toml::Value) {
     // TODO: move this into lazy_static
-    let re1 = Regex::new(r"\[.*\] (.+) periodic-stats (.+)").unwrap();
-    let cap = re1.captures_iter(line).next().unwrap();
-    let title_parts: Vec<String> = cap[1].split("-").map(|x| x.to_string()).collect();
-    let value: toml::Value = cap[2].parse().expect("failed to parse periodic stats");
-    match title_parts[0].as_str() {
-        "initial" => (title_parts[0].clone(), 0, value),
-        "incremental" => (title_parts[0].clone(), 0, value),
-        "reader" | "writer" => (
-            title_parts[0].clone(),
-            title_parts[1].parse().unwrap(),
-            value,
-        ),
+    let re1 = Regex::new(r"\[.*\] (.+) periodic-stats").unwrap();
+    let re2 = Regex::new(r"\[.*\] ").unwrap();
+    let cap = re1.captures_iter(&lines[0]).next().unwrap();
+    let tp: Vec<String> = cap[1].split("-").map(|x| x.to_string()).collect();
+    let stat_lines: Vec<String> = lines[1..]
+        .iter()
+        .take_while(|l| !re2.is_match(l))
+        .map(|l| l.to_string())
+        .collect();
+    let s = stat_lines.join("\n");
+    let value: toml::Value = s.parse().expect("failed to parse stats");
+    match tp[0].as_str() {
+        "initial" => (tp[0].clone(), 0, value),
+        "incremental" => (tp[0].clone(), 0, value),
+        "reader" | "writer" => (tp[0].clone(), tp[1].parse().unwrap(), value),
         _ => unreachable!(),
     }
 }

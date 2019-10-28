@@ -31,14 +31,14 @@ deletes = 0
 # Total number of get operations.
 gets = 0
 
-# Total number of full table scan.
-iters = 0
-
 # Total number of range iterations between a lower bound and upper bound.
 ranges = 0
 
 # Total number of reverse iterations between an upper bound and lower bound.
 reverses = 0
+
+# Benchmark a full table scan.
+iters = false
 
 # channel size to use between generator thread and loader thread.
 channel_size = 100_000

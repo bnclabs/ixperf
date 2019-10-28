@@ -26,19 +26,19 @@ loads = 1_000_000
 sets = 1_000_000
 
 # Total number of incremental delete operations.
-deletes = 0
+deletes = 1_000_000
 
 # Total number of get operations.
-gets = 1_000_000
-
-# Total number of full table scan.
-iters = 0
+gets = 6_000_000
 
 # Total number of range iterations between a lower bound and upper bound.
-ranges = 0
+ranges = 1_000
 
 # Total number of reverse iterations between an upper bound and lower bound.
-reverses = 0
+reverses = 1_000
+
+# Benchmark a full table scan.
+iters = true
 
 # channel size to use between generator thread and loader thread.
 channel_size = 100_000

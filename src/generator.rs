@@ -22,15 +22,15 @@ pub struct GenOptions {
     pub sets: usize,
     pub deletes: usize,
     pub gets: usize,
-    pub iters: usize,
     pub ranges: usize,
     pub reverses: usize,
+    pub iters: bool,
     pub channel_size: usize,
 }
 
 impl GenOptions {
     pub fn read_ops(&self) -> usize {
-        self.gets + self.iters + self.ranges + self.reverses
+        self.gets + self.ranges + self.reverses
     }
 
     pub fn write_ops(&self) -> usize {
@@ -53,9 +53,9 @@ impl TryFrom<toml::Value> for GenOptions {
                 "sets" => gen_opts.sets = utils::toml_to_usize(value),
                 "deletes" => gen_opts.deletes = utils::toml_to_usize(value),
                 "gets" => gen_opts.gets = utils::toml_to_usize(value),
-                "iters" => gen_opts.iters = utils::toml_to_usize(value),
                 "ranges" => gen_opts.ranges = utils::toml_to_usize(value),
                 "reverses" => gen_opts.reverses = utils::toml_to_usize(value),
+                "iters" => gen_opts.iters = utils::toml_to_bool(value),
                 _ => return Err(format!("invalid generator option {}", name)),
             }
         }
@@ -156,31 +156,27 @@ where
     let start = SystemTime::now();
     let mut rng = SmallRng::from_seed(g.seed.to_le_bytes());
 
-    let (mut gets, mut iters) = (g.gets, g.iters);
-    let (mut ranges, mut reverses) = (g.ranges, g.reverses);
-    let mut total = gets + iters + ranges + reverses;
+    let (mut gets, mut ranges, mut reverses) = (g.gets, g.ranges, g.reverses);
+    let mut total = gets + ranges + reverses;
     while total > 0 {
         let r: usize = rng.gen::<usize>() % total;
         let cmd = if r < gets {
             gets -= 1;
             Cmd::gen_get(&mut rng, &g)
-        } else if r < (gets + iters) {
-            iters -= 1;
-            Cmd::gen_iter(&mut rng, &g)
-        } else if r < (gets + iters + ranges) {
+        } else if r < (gets + ranges) {
             ranges -= 1;
             Cmd::gen_range(&mut rng, &g)
-        } else if r < (gets + iters + ranges + reverses) {
+        } else if r < (gets + ranges + reverses) {
             reverses -= 1;
             Cmd::gen_reverse(&mut rng, &g)
         } else {
             unreachable!();
         };
         tx.send(cmd).unwrap();
-        total = gets + iters + ranges + reverses;
+        total = gets + ranges + reverses;
     }
 
-    let total = g.gets + g.iters + g.ranges + g.reverses;
+    let total = g.gets + g.ranges + g.reverses;
     let elapsed = start.elapsed().unwrap();
     info!(
         target: "genrtr",
@@ -247,7 +243,7 @@ where
         total = sets + dels;
     }
 
-    let total = g.gets + g.iters + g.ranges + g.reverses;
+    let total = g.gets + g.ranges + g.reverses;
     let elapsed = start.elapsed().unwrap();
     info!(
         target: "genrtr",
@@ -296,39 +292,34 @@ where
     let start = SystemTime::now();
     let mut rng = SmallRng::from_seed(g.seed.to_le_bytes());
 
-    let (mut gets, mut iters) = (g.gets, g.iters);
-    let (mut ranges, mut reverses) = (g.ranges, g.reverses);
+    let (mut gets, mut ranges, mut reverses) = (g.gets, g.ranges, g.reverses);
     let (mut sets, mut dels) = (g.sets, g.deletes);
-    let mut total = gets + iters + ranges + reverses + sets + dels;
+    let mut total = gets + ranges + reverses + sets + dels;
     while total > 0 {
         let r: usize = rng.gen::<usize>() % total;
         let cmd = if r < gets {
             gets -= 1;
             Cmd::gen_get(&mut rng, &g)
-        } else if r < (gets + iters) {
-            iters -= 1;
-            Cmd::gen_iter(&mut rng, &g)
-        } else if r < (gets + iters + ranges) {
+        } else if r < (gets + ranges) {
             ranges -= 1;
             Cmd::gen_range(&mut rng, &g)
-        } else if r < (gets + iters + ranges + reverses) {
+        } else if r < (gets + ranges + reverses) {
             reverses -= 1;
             Cmd::gen_reverse(&mut rng, &g)
-        } else if r < (gets + iters + ranges + reverses + sets) {
+        } else if r < (gets + ranges + reverses + sets) {
             sets -= 1;
             Cmd::gen_set(&mut rng, &g)
-        } else if r < (gets + iters + ranges + reverses + sets + dels) {
+        } else if r < (gets + ranges + reverses + sets + dels) {
             dels -= 1;
             Cmd::gen_del(&mut rng, &g)
         } else {
             unreachable!();
         };
         tx.send(cmd).unwrap();
-        total = gets + iters + ranges + reverses + sets + dels;
+        total = gets + ranges + reverses + sets + dels;
     }
 
-    let total = g.gets + g.iters + g.ranges + g.reverses // reads
-    + g.sets + g.deletes; // writes
+    let total = g.gets + g.ranges + g.reverses + g.sets + g.deletes;
     let elapsed = start.elapsed().unwrap();
     info!(
         target: "genrtr",
@@ -379,10 +370,6 @@ where
         Cmd::Get {
             key: key.gen_key(rng, g),
         }
-    }
-
-    pub fn gen_iter(_rng: &mut SmallRng, _g: &GenOptions) -> Cmd<K, V> {
-        Cmd::Iter
     }
 
     pub fn gen_range(rng: &mut SmallRng, g: &GenOptions) -> Cmd<K, V> {

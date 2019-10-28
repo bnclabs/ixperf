@@ -7,6 +7,7 @@ pub struct Op {
     latency: Latency,
     count: usize,
     items: usize,
+    force: bool,
 }
 
 impl Op {
@@ -16,6 +17,7 @@ impl Op {
             latency: Latency::new(name),
             count: Default::default(),
             items: Default::default(),
+            force: Default::default(),
         }
     }
 
@@ -26,19 +28,21 @@ impl Op {
     }
 
     #[inline]
-    pub fn sample_start(&mut self) {
+    pub fn sample_start(&mut self, force: bool) {
         self.count += 1;
-        if (self.count % 8) == 0 {
+        self.force = force;
+        if force || (self.count % 8) == 0 {
             self.latency.start();
         }
     }
 
     #[inline]
     pub fn sample_end(&mut self, items: usize) {
-        if (self.count % 8) == 0 {
+        if self.force || (self.count % 8) == 0 {
             self.latency.stop();
         }
         self.items += items;
+        self.force = false;
     }
 
     pub fn to_json(&self) -> String {
@@ -60,10 +64,6 @@ impl Op {
             ),
             "get" => format!(
                 r#""get": {{ "ops": {}, "updates": {}, "latency": {}}}"#,
-                self.count, self.items, self.latency
-            ),
-            "iter" => format!(
-                r#""iter": {{ "ops": {}, "updates": {}, "latency": {}}}"#,
                 self.count, self.items, self.latency
             ),
             "range" => format!(
@@ -88,20 +88,25 @@ impl fmt::Display for Op {
         match self.name.as_str() {
             "load" | "set" => write!(
                 f,
-                "{} = {{ ops={}, updates={}, latency={} }}",
-                self.name, self.count, self.items, self.latency
-            ),
+                "{} = {{ ops={}, updates={}",
+                self.name, self.count, self.items
+            )?,
             "delete" | "get" => write!(
                 f,
-                "{} = {{ ops={}, missing={}, latency={} }}",
-                self.name, self.count, self.items, self.latency
-            ),
-            "iter" | "range" | "reverse" => write!(
+                "{} = {{ ops={}, missing={}",
+                self.name, self.count, self.items
+            )?,
+            "range" | "reverse" => write!(
                 f,
-                "{} = {{ ops={}, items={}, latency={} }}",
-                self.name, self.count, self.items, self.latency
-            ),
+                "{} = {{ ops={}, items={}",
+                self.name, self.count, self.items
+            )?,
             _ => unreachable!(),
+        };
+        if self.latency.to_samples() > 0 {
+            write!(f, ", latency={} }}", self.latency)
+        } else {
+            write!(f, "}}")
         }
     }
 }
@@ -123,7 +128,7 @@ impl fmt::Debug for Op {
                 "{} = {{ ops={}, missing={} }}",
                 self.name, self.count, self.items,
             )?,
-            "iter" | "range" | "reverse" => write!(
+            "range" | "reverse" => write!(
                 f,
                 "{} = {{ ops={}, items={} }}",
                 self.name, self.count, self.items,
@@ -139,7 +144,6 @@ pub struct Ops {
     pub set: Op,
     pub delete: Op,
     pub get: Op,
-    pub iter: Op,
     pub range: Op,
     pub reverse: Op,
 }
@@ -151,7 +155,6 @@ impl Ops {
             set: Op::new("set"),
             delete: Op::new("delete"),
             get: Op::new("get"),
-            iter: Op::new("iter"),
             range: Op::new("range"),
             reverse: Op::new("reverse"),
         }
@@ -163,7 +166,6 @@ impl Ops {
             + self.set.count
             + self.delete.count
             + self.get.count
-            + self.iter.count
             + self.range.count
             + self.reverse.count
     }
@@ -173,7 +175,6 @@ impl Ops {
         self.set.merge(&other.set);
         self.delete.merge(&other.delete);
         self.get.merge(&other.get);
-        self.iter.merge(&other.iter);
         self.range.merge(&other.range);
         self.reverse.merge(&other.reverse);
     }
@@ -185,7 +186,6 @@ impl Ops {
             self.set.to_json(),
             self.delete.to_json(),
             self.get.to_json(),
-            self.iter.to_json(),
             self.range.to_json(),
             self.reverse.to_json(),
         ];
@@ -205,28 +205,24 @@ impl Ops {
 
 impl fmt::Display for Ops {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        if self.load.count > 0 {
-            write!(f, "{}", self.load)?;
-        }
-        if self.set.count > 0 {
-            write!(f, "\n{}", self.set)?;
-        }
-        if self.delete.count > 0 {
-            write!(f, "\n{}", self.delete)?;
-        }
-        if self.get.count > 0 {
-            write!(f, "\n{}", self.get)?;
-        }
-        if self.iter.count > 0 {
-            write!(f, "\n{}", self.iter)?;
-        }
-        if self.range.count > 0 {
-            write!(f, "\n{}", self.range)?;
-        }
-        if self.reverse.count > 0 {
-            write!(f, "\n{}", self.reverse)?;
-        }
-        Ok(())
+        let items: Vec<String> = [
+            &self.load,
+            &self.set,
+            &self.delete,
+            &self.get,
+            &self.range,
+            &self.reverse,
+        ]
+        .iter()
+        .filter_map(|item| {
+            if item.count > 0 {
+                Some(format!("{}", item))
+            } else {
+                None
+            }
+        })
+        .collect();
+        write!(f, "{}", items.join("\n"))
     }
 }
 
@@ -243,9 +239,6 @@ impl fmt::Debug for Ops {
         }
         if self.get.count > 0 {
             write!(f, "\n{:?}", self.get)?;
-        }
-        if self.iter.count > 0 {
-            write!(f, "\n{:?}", self.iter)?;
         }
         if self.range.count > 0 {
             write!(f, "\n{:?}", self.range)?;

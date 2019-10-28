@@ -180,16 +180,6 @@ fn do_reader(
                 op_stats.get.latency.stop();
                 op_stats.get.count += 1;
             }
-            Cmd::Iter => {
-                let txn = env.begin_ro_txn().unwrap();
-                let mut cur = txn.open_ro_cursor(db).unwrap();
-                let iter = cur.iter();
-
-                op_stats.iter.latency.start();
-                iter.for_each(|_| op_stats.iter.items += 1);
-                op_stats.iter.latency.stop();
-                op_stats.iter.count += 1;
-            }
             Cmd::Range { low, high } => {
                 let txn = env.begin_ro_txn().unwrap();
                 let mut cur = txn.open_ro_cursor(db).unwrap();

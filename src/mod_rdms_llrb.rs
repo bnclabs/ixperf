@@ -70,7 +70,7 @@ where
     for (i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Load { key, value } => {
-                ostats.load.sample_start();
+                ostats.load.sample_start(false);
                 let items = index.set(key, value).unwrap().map_or(0, |_| 1);
                 ostats.load.sample_end(items);
             }
@@ -101,33 +101,28 @@ where
     for (i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Set { key, value } => {
-                ostats.set.sample_start();
+                ostats.set.sample_start(false);
                 let n = index.set(key, value.clone()).unwrap().map_or(0, |_| 1);
                 ostats.set.sample_end(n);
             }
             Cmd::Delete { key } => {
-                ostats.delete.sample_start();
+                ostats.delete.sample_start(false);
                 let items = index.delete(&key).ok().map_or(1, |_| 0);
                 ostats.delete.sample_end(items);
             }
             Cmd::Get { key } => {
-                ostats.get.sample_start();
+                ostats.get.sample_start(false);
                 let items = index.get(&key).ok().map_or(1, |_| 0);
                 ostats.get.sample_end(items);
             }
-            Cmd::Iter => {
-                let iter = index.iter().unwrap();
-                ostats.iter.sample_start();
-                ostats.iter.sample_end(iter.fold(0, |acc, _| acc + 1));
-            }
             Cmd::Range { low, high } => {
                 let iter = index.range((low, high)).unwrap();
-                ostats.range.sample_start();
+                ostats.range.sample_start(true);
                 ostats.range.sample_end(iter.fold(0, |acc, _| acc + 1));
             }
             Cmd::Reverse { low, high } => {
                 let iter = index.reverse((low, high)).unwrap();
-                ostats.reverse.sample_start();
+                ostats.reverse.sample_start(true);
                 ostats.reverse.sample_end(iter.fold(0, |acc, _| acc + 1));
             }
             _ => unreachable!(),
@@ -162,23 +157,18 @@ where
     for (i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Get { key } => {
-                ostats.get.sample_start();
+                ostats.get.sample_start(false);
                 let items = r.get(&key).ok().map_or(1, |_| 0);
                 ostats.get.sample_end(items);
             }
-            Cmd::Iter => {
-                let iter = r.iter().unwrap();
-                ostats.iter.sample_start();
-                ostats.iter.sample_end(iter.fold(0, |acc, _| acc + 1));
-            }
             Cmd::Range { low, high } => {
                 let iter = r.range((low, high)).unwrap();
-                ostats.range.sample_start();
+                ostats.range.sample_start(true);
                 ostats.range.sample_end(iter.fold(0, |acc, _| acc + 1));
             }
             Cmd::Reverse { low, high } => {
                 let iter = r.reverse((low, high)).unwrap();
-                ostats.reverse.sample_start();
+                ostats.reverse.sample_start(true);
                 ostats.reverse.sample_end(iter.fold(0, |acc, _| acc + 1));
             }
             _ => unreachable!(),
@@ -213,12 +203,12 @@ where
     for (i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Set { key, value } => {
-                ostats.set.sample_start();
+                ostats.set.sample_start(false);
                 let n = w.set(key, value.clone()).unwrap().map_or(0, |_| 1);
                 ostats.set.sample_end(n);
             }
             Cmd::Delete { key } => {
-                ostats.delete.sample_start();
+                ostats.delete.sample_start(false);
                 let items = w.delete(&key).ok().map_or(1, |_| 0);
                 ostats.delete.sample_end(items);
             }

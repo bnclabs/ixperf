@@ -249,9 +249,6 @@ impl TryFrom<toml::Value> for Profile {
 //                "gets" => {
 //                    p.gets = value.as_integer().unwrap().try_into().unwrap();
 //                }
-//                "iters" => {
-//                    p.iters = value.as_integer().unwrap().try_into().unwrap();
-//                }
 //                "ranges" => {
 //                    p.ranges = value.as_integer().unwrap().try_into().unwrap();
 //                }
