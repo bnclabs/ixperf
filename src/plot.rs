@@ -18,7 +18,7 @@ struct PlotData {
 }
 
 impl PlotData {
-    fn render(&self) {
+    fn render(&self, opt: &Opt) {
         let path_dir = {
             let mut p = path::PathBuf::new();
             p.push(".");
@@ -31,6 +31,7 @@ impl PlotData {
         let x_axis = "Seconds";
         let y_axis1 = "Throughput kilo-ops / Sec";
         let y_axis2 = "Latency in uS";
+        let lat = opt.percentile.as_str();
         let plots = [
             (
                 "initial-load-throughput.png",
@@ -46,7 +47,7 @@ impl PlotData {
                 ["load"].to_vec(),
                 x_axis,
                 y_axis2,
-                [Self::get_lat_98("load", &self.title_initial)].to_vec(),
+                [Self::get_lat_at("load", &self.title_initial, lat)].to_vec(),
             ),
             (
                 "incremental-ops-throughput.png",
@@ -68,9 +69,9 @@ impl PlotData {
                 x_axis,
                 y_axis2,
                 [
-                    Self::get_lat_98("set", &self.title_incrmnt),
-                    Self::get_lat_98("delete", &self.title_incrmnt),
-                    Self::get_lat_98("get", &self.title_incrmnt),
+                    Self::get_lat_at("set", &self.title_incrmnt, lat),
+                    Self::get_lat_at("delete", &self.title_incrmnt, lat),
+                    Self::get_lat_at("get", &self.title_incrmnt, lat),
                 ]
                 .to_vec(),
             ),
@@ -95,8 +96,8 @@ impl PlotData {
                 x_axis,
                 y_axis2,
                 [
-                    Self::get_lat_98("range", &self.title_incrmnt),
-                    Self::get_lat_98("reverse", &self.title_incrmnt),
+                    Self::get_lat_at("range", &self.title_incrmnt, lat),
+                    Self::get_lat_at("reverse", &self.title_incrmnt, lat),
                 ]
                 .to_vec(),
             ),
@@ -135,20 +136,13 @@ impl PlotData {
         out
     }
 
-    fn get_lat_98(op_name: &str, vs: &Vec<toml::Value>) -> Vec<u64> {
+    fn get_lat_at(op_name: &str, vs: &Vec<toml::Value>, lat: &str) -> Vec<u64> {
         let mut out = vec![];
         for v in vs {
             if let Some(table) = v.as_table() {
                 if let Some(t) = table.get(op_name) {
                     let t = t["latency"]["latencies"].as_table().unwrap();
-                    let v = if t.contains_key("98") {
-                        &t["98"]
-                    } else if t.contains_key("99") {
-                        &t["99"]
-                    } else {
-                        &t["100"]
-                    };
-                    out.push(v.as_integer().unwrap() as u64);
+                    out.push(t[lat].as_integer().unwrap() as u64);
                 }
             }
         }
@@ -326,7 +320,7 @@ pub fn do_plot(opt: Opt) -> Result<(), String> {
         }
     };
 
-    for mut file in opt.plot.0 {
+    for mut file in opt.plot.0.iter() {
         let mut buf = vec![];
         file.read_to_end(&mut buf).unwrap();
         let s = std::str::from_utf8(&buf).unwrap();
@@ -374,7 +368,7 @@ pub fn do_plot(opt: Opt) -> Result<(), String> {
         title_writers,
         title_readers,
     };
-    data.render();
+    data.render(&opt);
     Ok(())
 }
 

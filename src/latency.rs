@@ -139,8 +139,8 @@ impl fmt::Display for Latency {
             self.total.as_nanos(),
             rate as u64,
             self.min,
-            self.max,
             self.to_mean(),
+            self.max,
             latencies,
         )
     }

@@ -78,27 +78,27 @@ where
         target: "llrbix",
         "INITIAL LOAD for type <{},{}>", p.key_type, p.val_type
     );
-    let mut full_stats = stats::Ops::new();
-    let mut local_stats = stats::Ops::new();
+    let mut fstats = stats::Ops::new();
+    let mut lstats = stats::Ops::new();
     let gen = InitialLoad::<K, V>::new(p.g.clone());
     let mut start = SystemTime::now();
     for (_i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Load { key, value } => {
-                local_stats.load.sample_start(false);
+                lstats.load.sample_start(false);
                 let items = index.set(key, value).map_or(0, |_| 1);
-                local_stats.load.sample_end(items);
+                lstats.load.sample_end(items);
             }
             _ => unreachable!(),
         };
-        if start.elapsed().unwrap().as_nanos() > 1_000_000_000 {
-            info!(target: "llrbix", "initial periodic-stats\n{}", local_stats);
-            full_stats.merge(&local_stats);
-            local_stats = stats::Ops::new();
+        if start.elapsed().unwrap().as_nanos() > 1_000_000_000 && p.verbose {
+            info!(target: "llrbix", "initial periodic-stats\n{}", lstats);
+            fstats.merge(&lstats);
+            lstats = stats::Ops::new();
             start = SystemTime::now();
         }
     }
-    info!(target: "llrbix", "initial stats\n{:?}\n", full_stats);
+    info!(target: "llrbix", "initial stats\n{:?}\n", fstats);
 }
 
 fn do_incremental<K, V>(index: &mut Llrb<K, V>, p: &Profile)
@@ -114,50 +114,48 @@ where
         target: "llrbix",
         "INCREMENTAL LOAD for type <{},{}>", p.key_type, p.val_type
     );
-    let mut full_stats = stats::Ops::new();
-    let mut local_stats = stats::Ops::new();
+    let mut fstats = stats::Ops::new();
+    let mut lstats = stats::Ops::new();
     let gen = IncrementalLoad::<K, V>::new(p.g.clone());
     let mut start = SystemTime::now();
     for (_i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Set { key, value } => {
-                local_stats.set.sample_start(false);
+                lstats.set.sample_start(false);
                 let n = index.set(key, value.clone()).map_or(0, |_| 1);
-                local_stats.set.sample_end(n);
+                lstats.set.sample_end(n);
             }
             Cmd::Delete { key } => {
-                local_stats.delete.sample_start(false);
+                lstats.delete.sample_start(false);
                 let items = index.delete(&key).map_or(1, |_| 0);
-                local_stats.delete.sample_end(items);
+                lstats.delete.sample_end(items);
             }
             Cmd::Get { key } => {
-                local_stats.get.sample_start(false);
+                lstats.get.sample_start(false);
                 let items = index.get(&key).map_or(1, |_| 0);
-                local_stats.get.sample_end(items);
+                lstats.get.sample_end(items);
             }
             Cmd::Range { low, high } => {
                 let iter = index.range((low, high));
-                local_stats.range.sample_start(true);
-                local_stats.range.sample_end(iter.fold(0, |acc, _| acc + 1));
+                lstats.range.sample_start(true);
+                lstats.range.sample_end(iter.fold(0, |acc, _| acc + 1));
             }
             Cmd::Reverse { low, high } => {
                 let iter = index.reverse((low, high));
-                local_stats.reverse.sample_start(true);
-                local_stats
-                    .reverse
-                    .sample_end(iter.fold(0, |acc, _| acc + 1));
+                lstats.reverse.sample_start(true);
+                lstats.reverse.sample_end(iter.fold(0, |acc, _| acc + 1));
             }
             _ => unreachable!(),
         };
-        if start.elapsed().unwrap().as_nanos() > 1_000_000_000 {
-            info!(target: "llrbix", "incremental periodic-stats\n{}", local_stats);
-            full_stats.merge(&local_stats);
-            local_stats = stats::Ops::new();
+        if start.elapsed().unwrap().as_nanos() > 1_000_000_000 && p.verbose {
+            info!(target: "llrbix", "incremental periodic-stats\n{}", lstats);
+            fstats.merge(&lstats);
+            lstats = stats::Ops::new();
             start = SystemTime::now();
         }
     }
 
-    info!(target: "llrbix", "incremental stats\n{:?}", local_stats);
+    info!(target: "llrbix", "incremental stats\n{:?}", lstats);
 }
 
 fn validate<K, V>(index: Llrb<K, V>, _p: Profile)
