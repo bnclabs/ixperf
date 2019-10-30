@@ -76,7 +76,7 @@ where
 
     info!(
         target: "llrbix",
-        "INITIAL LOAD for type <{},{}>", p.key_type, p.val_type
+        "intial load for type <{},{}>", p.key_type, p.val_type
     );
     let mut fstats = stats::Ops::new();
     let mut lstats = stats::Ops::new();
@@ -110,8 +110,9 @@ where
 
     info!(
         target: "llrbix",
-        "INCREMENTAL LOAD for type <{},{}>", p.key_type, p.val_type
+        "incremental load for type <{},{}>", p.key_type, p.val_type
     );
+
     let mut fstats = stats::Ops::new();
     let mut lstats = stats::Ops::new();
     let gen = IncrementalLoad::<K, V>::new(p.g.clone());
@@ -159,13 +160,14 @@ where
     K: 'static + Clone + Default + Send + Sync + Ord + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
-    info!(
-        target: "llrbix",
-        "begin validation for llrb index {} ...", index.to_name()
-    );
+    // TODO
+    //info!(
+    //    target: "llrbix",
+    //    "begin validation for llrb index {} ...", index.to_name()
+    //);
 
-    match index.validate() {
-        Ok(stats) => (),
-        Err(err) => panic!(err),
-    }
+    //match index.validate() {
+    //    Ok(stats) => (),
+    //    Err(err) => panic!(err),
+    //}
 }

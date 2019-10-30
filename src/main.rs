@@ -1,9 +1,11 @@
+#![feature(result_map_or_else)]
+
 mod generator;
 mod latency;
 mod mod_llrb;
+mod mod_rdms;
 mod plot;
 // TODO mod mod_lmdb;
-// TODO mod mod_rdms_llrb;
 // TODO mod mod_rdms_mvcc;
 // TODO mod mod_rdms_robt;
 mod stats;
@@ -135,7 +137,7 @@ fn main() {
 
     let res = match p.index.as_str() {
         "llrb-index" => mod_llrb::do_llrb_index(p),
-        //"rdms-llrb" => do_rdms_llrb(p),
+        "rdms" => mod_rdms::do_rdms_index(p),
         //"rdms-mvcc" => do_rdms_mvcc(p),
         //"rdms-robt" => do_rdms_robt(p),
         _ => Err(format!("unsupported index-type {}", p.index)),
@@ -203,6 +205,8 @@ pub struct Profile {
     pub val_type: String,
     pub verbose: bool,
     pub g: generator::GenOptions,
+    pub rdms: mod_rdms::RdmsOpt,
+    pub rdms_llrb: mod_rdms::LlrbOpt,
 }
 
 impl TryFrom<toml::Value> for Profile {
@@ -219,6 +223,8 @@ impl TryFrom<toml::Value> for Profile {
             }
         }
         p.g = TryFrom::try_from(value.clone())?;
+        p.rdms = TryFrom::try_from(value.clone()).ok().unwrap();
+        p.rdms_llrb = TryFrom::try_from(value.clone()).ok().unwrap();
         Ok(p)
     }
 }
