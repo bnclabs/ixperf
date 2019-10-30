@@ -223,8 +223,12 @@ impl TryFrom<toml::Value> for Profile {
             }
         }
         p.g = TryFrom::try_from(value.clone())?;
-        p.rdms = TryFrom::try_from(value.clone()).ok().unwrap();
-        p.rdms_llrb = TryFrom::try_from(value.clone()).ok().unwrap();
+        p.rdms = TryFrom::try_from(value.clone())
+            .ok()
+            .unwrap_or(Default::default());
+        p.rdms_llrb = TryFrom::try_from(value.clone())
+            .ok()
+            .unwrap_or(Default::default());
         Ok(p)
     }
 }

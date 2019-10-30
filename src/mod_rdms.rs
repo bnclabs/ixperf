@@ -230,7 +230,8 @@ where
             }
             _ => unreachable!(),
         };
-        if p.verbose && lstats.is_sec_elapsed() {
+        if p.verbose && (_i % 1_000_000) == 0 {
+            println!(" ...... {}", _i);
             info!(target: "rdmsix", "initial periodic-stats\n{}", lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
