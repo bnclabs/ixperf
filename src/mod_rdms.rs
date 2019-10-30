@@ -25,7 +25,7 @@ impl TryFrom<toml::Value> for LlrbOpt {
     fn try_from(value: toml::Value) -> Result<Self, Self::Error> {
         let mut llrb_opt: LlrbOpt = Default::default();
 
-        let section = match &value["ixperf"].get("rdms-llrb") {
+        let section = match &value.get("rdms-llrb") {
             None => return Err("not found".to_string()),
             Some(section) => section.clone(),
         };
@@ -94,7 +94,7 @@ impl TryFrom<toml::Value> for RdmsOpt {
     fn try_from(value: toml::Value) -> Result<Self, Self::Error> {
         let mut rdms_opt: RdmsOpt = Default::default();
 
-        let section = match &value["ixperf"].get("rdms-llrb") {
+        let section = match &value.get("rdms") {
             None => return Err("not found".to_string()),
             Some(section) => section.clone(),
         };
@@ -148,7 +148,7 @@ where
             let index = p.rdms.new_with_llrb("ixperf", &p);
             perf1::<K, V, Box<rdms::llrb::Llrb<K, V>>>(index, p)
         }
-        _ => unreachable!(),
+        name => panic!("unsupported index {}", name),
     }
 }
 
@@ -230,8 +230,7 @@ where
             }
             _ => unreachable!(),
         };
-        if p.verbose && (_i % 1_000_000) == 0 {
-            println!(" ...... {}", _i);
+        if p.verbose && lstats.is_sec_elapsed() {
             info!(target: "rdmsix", "initial periodic-stats\n{}", lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
@@ -343,7 +342,7 @@ where
         }
     }
 
-    info!(target: "rdmsix", "reader-{} stats\n{:?}", id, lstats);
+    info!(target: "rdmsix", "reader-{} stats {:?}", id, lstats);
 }
 
 fn do_write<W, K, V>(id: usize, mut w: W, p: Profile)
