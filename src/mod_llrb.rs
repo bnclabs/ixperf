@@ -51,14 +51,14 @@ where
         }
         assert_eq!(iter_count, index.len());
     }
-    let iter_dur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
+    let idur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
 
     do_incremental(&mut index, &p);
 
     if p.g.iters {
         info!(
             target: "llrbix",
-            "llrb took {:?} to iter over {} items", iter_dur, iter_count
+            "llrb took {:?} to iter over {} items", idur, iter_count
         );
     }
 
@@ -159,9 +159,13 @@ where
     K: 'static + Clone + Default + Send + Sync + Ord + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
-    // TODO: validate the statitics
+    info!(
+        target: "llrbix",
+        "begin validation for llrb index {} ...", index.to_name()
+    );
+
     match index.validate() {
-        Ok(_) => (),
+        Ok(stats) => (),
         Err(err) => panic!(err),
     }
 }

@@ -45,4 +45,3 @@ channel_size = 100_000
 
 [llrb-index]
 # no other options other than the [ixperf]
-
