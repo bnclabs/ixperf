@@ -294,6 +294,12 @@ impl FromStr for PlotOps {
 }
 
 pub fn do_plot(opt: Opt) -> Result<(), String> {
+    match &validate_log(&opt) {
+        Ok(_) => (),
+        Err(_err) if opt.ignore_error => (),
+        Err(err) => return Err(err.clone()),
+    }
+
     let re1 = Regex::new(r"\[.*\] (.+) periodic-stats").unwrap();
     let mut title_initial: Vec<toml::Value> = vec![];
     let mut title_incrmnt: Vec<toml::Value> = vec![];
@@ -407,5 +413,27 @@ fn parse_periodic_stats(lines: &[&str]) -> (String, usize, toml::Value) {
         "incremental" => (tp[0].clone(), 0, value),
         "reader" | "writer" => (tp[0].clone(), tp[1].parse().unwrap(), value),
         _ => unreachable!(),
+    }
+}
+
+fn validate_log(opt: &Opt) -> Result<(), String> {
+    let re1 = Regex::new(r"\[.*ERROR.*\] (.+) periodic-stats").unwrap();
+    let mut is_err = false;
+    for mut file in opt.plot.0.iter() {
+        let mut buf = vec![];
+        file.read_to_end(&mut buf).unwrap();
+        let s = std::str::from_utf8(&buf).unwrap();
+        let lines: Vec<&str> = s.lines().collect();
+        for line in lines {
+            if re1.is_match(line) {
+                println!("{}", line);
+                is_err = true;
+            }
+        }
+    }
+    if is_err {
+        Err("log file contains error".to_string())
+    } else {
+        Ok(())
     }
 }

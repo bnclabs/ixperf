@@ -40,6 +40,9 @@ pub struct Opt {
     #[structopt(long = "plot", default_value = "")]
     plot: plot::PlotFiles,
 
+    #[structopt(long = "ignore-error")]
+    ignore_error: bool,
+
     #[structopt(long = "percentile", default_value = "98")]
     percentile: String,
 
