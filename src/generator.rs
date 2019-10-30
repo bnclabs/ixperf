@@ -332,7 +332,6 @@ pub enum Cmd<K, V> {
     Set { key: K, value: V },
     Delete { key: K },
     Get { key: K },
-    Iter,
     Range { low: Bound<K>, high: Bound<K> },
     Reverse { low: Bound<K>, high: Bound<K> },
 }

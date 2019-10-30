@@ -1,4 +1,9 @@
-use std::{fs, io::Read, path, str::FromStr};
+use std::{
+    fs,
+    io::{self, Read, Seek},
+    path,
+    str::FromStr,
+};
 
 use log::info;
 use plotters::{
@@ -35,7 +40,7 @@ impl PlotData {
         let plots = [
             (
                 "initial-load-throughput.png",
-                "initial-load-throughput",
+                "initial-load throughput",
                 ["load"].to_vec(),
                 x_axis,
                 y_axis1,
@@ -43,7 +48,7 @@ impl PlotData {
             ),
             (
                 "initial-load-latency.png",
-                "initial-load-latency 98th percentile",
+                "initial-load latency 98th percentile",
                 ["load"].to_vec(),
                 x_axis,
                 y_axis2,
@@ -51,7 +56,7 @@ impl PlotData {
             ),
             (
                 "incremental-ops-throughput.png",
-                "incremental-ops-throughput",
+                "incremental-ops throughput",
                 ["set", "delete", "get"].to_vec(),
                 x_axis,
                 y_axis1,
@@ -64,7 +69,7 @@ impl PlotData {
             ),
             (
                 "incremental-ops-latency.png",
-                "incremental-ops-latency 98th percentile",
+                "incremental-ops latency 98th percentile",
                 ["set", "delete", "get"].to_vec(),
                 x_axis,
                 y_axis2,
@@ -77,7 +82,7 @@ impl PlotData {
             ),
             (
                 "incremental-range-throughput.png",
-                "incremental-range-throughput",
+                "incremental-range throughput",
                 ["range", "reverse", "range-items", "reverse-items"].to_vec(),
                 x_axis,
                 y_axis1,
@@ -91,13 +96,39 @@ impl PlotData {
             ),
             (
                 "incremental-range-latency.png",
-                "incremental-range-latency 98th percentile",
+                "incremental-range latency 98th percentile",
                 ["range", "reverse"].to_vec(),
                 x_axis,
                 y_axis2,
                 [
                     Self::get_lat_at("range", &self.title_incrmnt, lat),
                     Self::get_lat_at("reverse", &self.title_incrmnt, lat),
+                ]
+                .to_vec(),
+            ),
+            (
+                "concurrent-rw-ops-throughput.png",
+                "concurrent-rw ops throughput",
+                ["set", "delete", "get"].to_vec(),
+                x_axis,
+                y_axis1,
+                [
+                    Self::get_rate("set", &self.title_writers),
+                    Self::get_rate("delete", &self.title_writers),
+                    Self::get_rate("get", &self.title_readers),
+                ]
+                .to_vec(),
+            ),
+            (
+                "concurrent-rw--ops-latency.png",
+                "concurrent-rw ops latency 98th percentile",
+                ["set", "delete", "get"].to_vec(),
+                x_axis,
+                y_axis2,
+                [
+                    Self::get_lat_at("set", &self.title_writers, lat),
+                    Self::get_lat_at("delete", &self.title_writers, lat),
+                    Self::get_lat_at("get", &self.title_readers, lat),
                 ]
                 .to_vec(),
             ),
@@ -301,6 +332,7 @@ pub fn do_plot(opt: Opt) -> Result<(), String> {
     }
 
     let re1 = Regex::new(r"\[.*\] (.+) periodic-stats").unwrap();
+
     let mut title_initial: Vec<toml::Value> = vec![];
     let mut title_incrmnt: Vec<toml::Value> = vec![];
     let mut title_writers: Vec<toml::Value> = vec![];
@@ -345,13 +377,13 @@ pub fn do_plot(opt: Opt) -> Result<(), String> {
             .filter_map(|x| if x.0 == "writer" { Some(x.1) } else { None })
             .max()
             .unwrap_or(0);
-        writers.resize(max_writers, vec![]);
+        writers.resize(max_writers + 1, vec![]);
         let max_readers = items
             .iter()
             .filter_map(|x| if x.0 == "reader" { Some(x.1) } else { None })
             .max()
             .unwrap_or(0);
-        readers.resize(max_readers, vec![]);
+        readers.resize(max_readers + 1, vec![]);
         for (title, thread, value) in items.into_iter() {
             match title.as_str() {
                 "initial" => title_initial.push(value),
@@ -360,7 +392,7 @@ pub fn do_plot(opt: Opt) -> Result<(), String> {
                     writers[thread].push(value);
                     merge_thread(&mut writers).map(|v| title_writers.push(v));
                 }
-                title if &title[..6] == "readers" => {
+                title if &title[..6] == "reader" => {
                     readers[thread].push(value);
                     merge_thread(&mut readers).map(|v| title_readers.push(v));
                 }
@@ -430,6 +462,7 @@ fn validate_log(opt: &Opt) -> Result<(), String> {
                 is_err = true;
             }
         }
+        file.seek(io::SeekFrom::Start(0));
     }
     if is_err {
         Err("log file contains error".to_string())

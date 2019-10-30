@@ -155,7 +155,7 @@ where
     info!(target: "llrbix", "incremental stats\n{:?}", lstats);
 }
 
-fn validate<K, V>(index: Llrb<K, V>, _p: Profile)
+fn validate<K, V>(_index: Llrb<K, V>, _p: Profile)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
