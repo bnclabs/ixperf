@@ -78,7 +78,7 @@ where
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
     pub fn new(g: GenOptions) -> InitialLoad<K, V> {
-        let (tx, rx) = mpsc::sync_channel(g.channel_size);
+        let (tx, rx) = mpsc::channel();
         let _thread = { thread::spawn(move || initial_load(g, tx)) };
         InitialLoad { _thread, rx }
     }
@@ -96,7 +96,7 @@ where
     }
 }
 
-fn initial_load<K, V>(g: GenOptions, tx: mpsc::SyncSender<Cmd<K, V>>)
+fn initial_load<K, V>(g: GenOptions, tx: mpsc::Sender<Cmd<K, V>>)
 where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
@@ -130,7 +130,7 @@ where
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
     pub fn new(g: GenOptions) -> IncrementalRead<K, V> {
-        let (tx, rx) = mpsc::sync_channel(g.channel_size);
+        let (tx, rx) = mpsc::channel();
         let _thread = { thread::spawn(move || incremental_read(g, tx)) };
         IncrementalRead { _thread, rx }
     }
@@ -148,7 +148,7 @@ where
     }
 }
 
-fn incremental_read<K, V>(g: GenOptions, tx: mpsc::SyncSender<Cmd<K, V>>)
+fn incremental_read<K, V>(g: GenOptions, tx: mpsc::Sender<Cmd<K, V>>)
 where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
@@ -199,7 +199,7 @@ where
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
     pub fn new(g: GenOptions) -> IncrementalWrite<K, V> {
-        let (tx, rx) = mpsc::sync_channel(g.channel_size);
+        let (tx, rx) = mpsc::channel();
         let _thread = { thread::spawn(move || incremental_write(g, tx)) };
         IncrementalWrite { _thread, rx }
     }
@@ -217,7 +217,7 @@ where
     }
 }
 
-fn incremental_write<K, V>(g: GenOptions, tx: mpsc::SyncSender<Cmd<K, V>>)
+fn incremental_write<K, V>(g: GenOptions, tx: mpsc::Sender<Cmd<K, V>>)
 where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
@@ -266,7 +266,7 @@ where
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
     pub fn new(g: GenOptions) -> IncrementalLoad<K, V> {
-        let (tx, rx) = mpsc::sync_channel(g.channel_size);
+        let (tx, rx) = mpsc::channel();
         let _thread = { thread::spawn(move || incremental_load(g, tx)) };
         IncrementalLoad { _thread, rx }
     }
@@ -284,7 +284,7 @@ where
     }
 }
 
-fn incremental_load<K, V>(g: GenOptions, tx: mpsc::SyncSender<Cmd<K, V>>)
+fn incremental_load<K, V>(g: GenOptions, tx: mpsc::Sender<Cmd<K, V>>)
 where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
