@@ -427,6 +427,22 @@ impl RandomKV for [u8; 32] {
     }
 }
 
+impl RandomKV for [u8; 20] {
+    fn gen_key(&self, rng: &mut SmallRng, g: &GenOptions) -> [u8; 20] {
+        let limit = g.loads as i64;
+        let num = i64::abs(rng.gen::<i64>() % limit);
+        let mut arr = [0_u8; 20];
+        let src = format!("{:020}", num).as_bytes().to_vec();
+        arr.copy_from_slice(&src);
+        arr
+    }
+
+    fn gen_val(&self, _rng: &mut SmallRng, _g: &GenOptions) -> [u8; 20] {
+        let arr = [0xAB_u8; 20];
+        arr
+    }
+}
+
 impl RandomKV for Vec<u8> {
     fn gen_key(&self, rng: &mut SmallRng, g: &GenOptions) -> Vec<u8> {
         let mut key = Vec::with_capacity(g.key_size);

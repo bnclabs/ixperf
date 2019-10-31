@@ -3,7 +3,7 @@ use rdms::{self, Diff, Footprint, Index, Reader, Writer};
 
 use std::{
     convert::{TryFrom, TryInto},
-    thread,
+    fmt, thread,
     time::{Duration, SystemTime},
 };
 
@@ -66,23 +66,6 @@ pub struct RdmsOpt {
 }
 
 impl RdmsOpt {
-    fn new_with_llrb<K, V>(
-        &self, // from options
-        name: &str,
-        p: &Profile,
-    ) -> rdms::Rdms<K, V, Box<rdms::llrb::Llrb<K, V>>>
-    where
-        K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
-        V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
-    {
-        let index = p.rdms_llrb.new(name);
-        let mut index = rdms::Rdms::new(name, index).unwrap();
-        if self.commit_interval > 0 {
-            index.set_commit_interval(Duration::from_secs(self.commit_interval));
-        }
-        index
-    }
-
     fn threads(&self) -> usize {
         self.readers + self.writers
     }
@@ -120,17 +103,17 @@ impl TryFrom<toml::Value> for RdmsOpt {
     }
 }
 
-pub fn do_rdms_index(p: Profile) -> Result<(), String> {
+pub fn do_rdms_index(name: &str, p: Profile) -> Result<(), String> {
     match (p.key_type.as_str(), p.val_type.as_str()) {
-        ("i32", "i32") => Ok(perf::<i32, i32>(p)),
-        //("i32", "array") => Ok(perf::<i32, [u8; 32]>(p)),
-        ("i32", "bytes") => Ok(perf::<i32, Vec<u8>>(p)),
-        ("i64", "i64") => Ok(perf::<i64, i64>(p)),
-        //("i64", "array") => Ok(perf::<i64, [u8; 32]>(p)),
-        ("i64", "bytes") => Ok(perf::<i64, Vec<u8>>(p)),
-        //("array", "array") => Ok(perf::<[u8; 32], [u8; 32]>(p)),
-        //("array", "bytes") => Ok(perf::<[u8; 32], Vec<u8>>(p)),
-        ("bytes", "bytes") => Ok(perf::<Vec<u8>, Vec<u8>>(p)),
+        ("i32", "i32") => Ok(perf::<i32, i32>(name, p)),
+        ("i32", "array") => Ok(perf::<i32, [u8; 20]>(name, p)),
+        ("i32", "bytes") => Ok(perf::<i32, Vec<u8>>(name, p)),
+        ("i64", "i64") => Ok(perf::<i64, i64>(name, p)),
+        ("i64", "array") => Ok(perf::<i64, [u8; 20]>(name, p)),
+        ("i64", "bytes") => Ok(perf::<i64, Vec<u8>>(name, p)),
+        ("array", "array") => Ok(perf::<[u8; 20], [u8; 20]>(name, p)),
+        ("array", "bytes") => Ok(perf::<[u8; 20], Vec<u8>>(name, p)),
+        ("bytes", "bytes") => Ok(perf::<Vec<u8>, Vec<u8>>(name, p)),
         _ => Err(format!(
             "unsupported key/value types {}/{}",
             p.key_type, p.val_type
@@ -138,21 +121,30 @@ pub fn do_rdms_index(p: Profile) -> Result<(), String> {
     }
 }
 
-fn perf<K, V>(p: Profile)
+fn perf<K, V>(name: &str, p: Profile)
 where
-    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
+    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + fmt::Debug + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
 {
     match p.rdms.index.as_str() {
         "llrb" => {
-            let index = p.rdms.new_with_llrb("ixperf", &p);
-            perf1::<K, V, Box<rdms::llrb::Llrb<K, V>>>(index, p)
+            let llrb_index = p.rdms_llrb.new(name);
+            let mut index = rdms::Rdms::new(name, llrb_index).unwrap();
+            if p.rdms.commit_interval > 0 {
+                let interval = Duration::from_secs(p.rdms.commit_interval);
+                index.set_commit_interval(interval);
+            }
+
+            perf1::<K, V, Box<rdms::llrb::Llrb<K, V>>>(&mut index, p);
+
+            let stats = index.validate().unwrap(); // TODO: validate stats
+            info!(target: "ixperf", "rdms llrb stats\n{}", stats);
         }
         name => panic!("unsupported index {}", name),
     }
 }
 
-fn perf1<K, V, I>(mut index: rdms::Rdms<K, V, I>, p: Profile)
+fn perf1<K, V, I>(index: &mut rdms::Rdms<K, V, I>, p: Profile)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
@@ -161,9 +153,9 @@ where
     <I as Index<K, V>>::W: 'static + Send + Sync,
 {
     let start = SystemTime::now();
-    do_initial_load(&mut index, &p);
+    do_initial_load(index, &p);
     let dur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
-    info!(target: "rdmsix", "initial-load completed in {:?}", dur);
+    info!(target: "ixperf", "initial-load completed in {:?}", dur);
 
     let (start, mut iter_count) = (SystemTime::now(), 0);
     if p.g.iters {
@@ -175,7 +167,7 @@ where
     let idur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
 
     if p.rdms.threads() == 0 && (p.g.read_ops() + p.g.write_ops()) > 0 {
-        do_incremental(&mut index, &p);
+        do_incremental(index, &p);
     } else if (p.g.read_ops() + p.g.write_ops()) > 0 {
         let mut threads = vec![];
         for i in 0..p.rdms.readers {
@@ -195,12 +187,10 @@ where
 
     if p.g.iters {
         info!(
-            target: "rdmsix",
+            target: "ixperf",
             "rdms took {:?} to iter over {} items", idur, iter_count
         );
     }
-
-    // TODO validate(index, p);
 }
 
 fn do_initial_load<K, V, I>(index: &mut rdms::Rdms<K, V, I>, p: &Profile)
@@ -214,7 +204,7 @@ where
     }
 
     info!(
-        target: "rdmsix",
+        target: "ixperf",
         "initial load for type <{},{}>", p.key_type, p.val_type
     );
     let mut w = index.to_writer().unwrap();
@@ -231,12 +221,12 @@ where
             _ => unreachable!(),
         };
         if p.verbose && lstats.is_sec_elapsed() {
-            info!(target: "rdmsix", "initial periodic-stats\n{}", lstats);
+            info!(target: "ixperf", "initial periodic-stats\n{}", lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
         }
     }
-    info!(target: "llrbix", "initial stats\n{:?}\n", fstats);
+    info!(target: "ixperf", "initial stats\n{:?}\n", fstats);
 }
 
 fn do_incremental<K, V, I>(index: &mut rdms::Rdms<K, V, I>, p: &Profile)
@@ -250,7 +240,7 @@ where
     }
 
     info!(
-        target: "rdmsix",
+        target: "ixperf",
         "incremental load for type <{},{}>", p.key_type, p.val_type
     );
 
@@ -289,13 +279,13 @@ where
             _ => unreachable!(),
         };
         if p.verbose && lstats.is_sec_elapsed() {
-            info!(target: "rdmsix", "incremental periodic-stats\n{}", lstats);
+            info!(target: "ixperf", "incremental periodic-stats\n{}", lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
         }
     }
 
-    info!(target: "rdmsix", "incremental stats\n{:?}", lstats);
+    info!(target: "ixperf", "incremental stats\n{:?}", fstats);
 }
 
 fn do_read<R, K, V>(id: usize, mut r: R, p: Profile)
@@ -309,7 +299,7 @@ where
     }
 
     info!(
-        target: "rdmsix",
+        target: "ixperf",
         "reader-{} for type <{},{}>", id, p.key_type, p.val_type
     );
 
@@ -336,13 +326,13 @@ where
             _ => unreachable!(),
         };
         if p.verbose && lstats.is_sec_elapsed() {
-            info!(target: "rdmsix", "reader-{} periodic-stats\n{}", id, lstats);
+            info!(target: "ixperf", "reader-{} periodic-stats\n{}", id, lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
         }
     }
 
-    info!(target: "rdmsix", "reader-{} stats {:?}", id, lstats);
+    info!(target: "ixperf", "reader-{} stats {:?}", id, fstats);
 }
 
 fn do_write<W, K, V>(id: usize, mut w: W, p: Profile)
@@ -356,7 +346,7 @@ where
     }
 
     info!(
-        target: "rdmsix",
+        target: "ixperf",
         "writer-{} for type <{},{}>", id, p.key_type, p.val_type
     );
 
@@ -378,28 +368,11 @@ where
             _ => unreachable!(),
         };
         if p.verbose && lstats.is_sec_elapsed() {
-            info!(target: "rdmsix", "writer-{} periodic-stats\n{}", id, lstats);
+            info!(target: "ixperf", "writer-{} periodic-stats\n{}", id, lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
         }
     }
 
-    info!(target: "rdmsix", "writer-{} stats\n{:?}", id, lstats);
+    info!(target: "ixperf", "writer-{} stats\n{:?}", id, fstats);
 }
-
-//fn validate<K, V, I>(index: rdms::Rdms<K, V, I>, p: Profile)
-//where
-//    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV + fmt::Debug,
-//    V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
-//    I: Index<K, V>,
-//{
-//    // TODO: validate the statitics
-//    //match index.validate() {
-//    //    Ok(stats) => {
-//    //        if p.write_ops() == 0 {
-//    //            assert!(stats.to_conflicts() == 0);
-//    //        }
-//    //    }
-//    //    Err(err) => panic!(err),
-//    //}
-//}

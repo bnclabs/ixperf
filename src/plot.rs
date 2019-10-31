@@ -7,6 +7,7 @@ use std::{
 
 use log::info;
 use plotters::{
+    chart::SeriesLabelPosition,
     prelude::*,
     style::colors::{BLACK, BLUE, CYAN, GREEN, MAGENTA, RED, WHITE},
     style::RGBColor,
@@ -35,7 +36,7 @@ impl PlotData {
 
         let x_axis = "Seconds";
         let y_axis1 = "Throughput kilo-ops / Sec";
-        let y_axis2 = "Latency in uS";
+        let y_axis2 = "Latency in nS";
         let lat = opt.percentile.as_str();
         let plots = [
             (
@@ -44,7 +45,7 @@ impl PlotData {
                 ["load"].to_vec(),
                 x_axis,
                 y_axis1,
-                [Self::get_rate("load", &self.title_initial)].to_vec(),
+                [Self::get_ops("load", &self.title_initial)].to_vec(),
             ),
             (
                 "initial-load-latency.png",
@@ -61,9 +62,9 @@ impl PlotData {
                 x_axis,
                 y_axis1,
                 [
-                    Self::get_rate("set", &self.title_incrmnt),
-                    Self::get_rate("delete", &self.title_incrmnt),
-                    Self::get_rate("get", &self.title_incrmnt),
+                    Self::get_ops("set", &self.title_incrmnt),
+                    Self::get_ops("delete", &self.title_incrmnt),
+                    Self::get_ops("get", &self.title_incrmnt),
                 ]
                 .to_vec(),
             ),
@@ -87,8 +88,8 @@ impl PlotData {
                 x_axis,
                 y_axis1,
                 [
-                    Self::get_rate("range", &self.title_incrmnt),
-                    Self::get_rate("reverse", &self.title_incrmnt),
+                    Self::get_ops("range", &self.title_incrmnt),
+                    Self::get_ops("reverse", &self.title_incrmnt),
                     Self::get_items("range", &self.title_incrmnt),
                     Self::get_items("reverse", &self.title_incrmnt),
                 ]
@@ -113,14 +114,14 @@ impl PlotData {
                 x_axis,
                 y_axis1,
                 [
-                    Self::get_rate("set", &self.title_writers),
-                    Self::get_rate("delete", &self.title_writers),
-                    Self::get_rate("get", &self.title_readers),
+                    Self::get_ops("set", &self.title_writers),
+                    Self::get_ops("delete", &self.title_writers),
+                    Self::get_ops("get", &self.title_readers),
                 ]
                 .to_vec(),
             ),
             (
-                "concurrent-rw--ops-latency.png",
+                "concurrent-rw-ops-latency.png",
                 "concurrent-rw ops latency 98th percentile",
                 ["set", "delete", "get"].to_vec(),
                 x_axis,
@@ -141,12 +142,12 @@ impl PlotData {
         }
     }
 
-    fn get_rate(op_name: &str, vs: &Vec<toml::Value>) -> Vec<u64> {
+    fn get_ops(op_name: &str, vs: &Vec<toml::Value>) -> Vec<u64> {
         let mut out = vec![];
         for v in vs {
             if let Some(table) = v.as_table() {
                 if let Some(table) = table.get(op_name) {
-                    let v = table["latency"]["rate"].as_integer().unwrap();
+                    let v = table["ops"].as_integer().unwrap();
                     out.push((v as u64) / 1000);
                 }
             }
@@ -170,12 +171,18 @@ impl PlotData {
     fn get_lat_at(op_name: &str, vs: &Vec<toml::Value>, lat: &str) -> Vec<u64> {
         let mut out = vec![];
         for v in vs {
-            if let Some(table) = v.as_table() {
-                if let Some(t) = table.get(op_name) {
-                    let t = t["latency"]["latencies"].as_table().unwrap();
-                    out.push(t[lat].as_integer().unwrap() as u64);
-                }
-            }
+            let table = if let Some(table) = v.as_table() {
+                table
+            } else {
+                continue;
+            };
+            let t = if let Some(t) = table.get(op_name) {
+                t
+            } else {
+                continue;
+            };
+            let t = t["latency"]["latencies"].as_table().unwrap();
+            out.push(t[lat].as_integer().unwrap() as u64);
         }
         out
     }
@@ -255,6 +262,7 @@ fn do_render(
     }
     chart
         .configure_series_labels()
+        .position(SeriesLabelPosition::UpperRight)
         .background_style(&RGBColor(255, 255, 255))
         .draw()
         .expect("draw label");
@@ -462,7 +470,7 @@ fn validate_log(opt: &Opt) -> Result<(), String> {
                 is_err = true;
             }
         }
-        file.seek(io::SeekFrom::Start(0));
+        file.seek(io::SeekFrom::Start(0)).unwrap();
     }
     if is_err {
         Err("log file contains error".to_string())

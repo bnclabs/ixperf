@@ -171,13 +171,13 @@ impl Ops {
     }
 
     pub fn is_sec_elapsed(&self) -> bool {
-        let mut elapsed = self.load.latency.elapsed();
-        elapsed += self.set.latency.elapsed();
-        elapsed += self.delete.latency.elapsed();
-        elapsed += self.get.latency.elapsed();
-        elapsed += self.range.latency.elapsed();
-        elapsed += self.reverse.latency.elapsed();
-        (elapsed * 8) > 1_000_000_000
+        let mut elapsed = self.load.latency.elapsed() * 8;
+        elapsed += self.set.latency.elapsed() * 8;
+        elapsed += self.delete.latency.elapsed() * 8;
+        elapsed += self.get.latency.elapsed() * 8;
+        elapsed += self.range.latency.elapsed() * 8;
+        elapsed += self.reverse.latency.elapsed() * 8;
+        elapsed > 1_000_000_000
     }
 
     pub fn merge(&mut self, other: &Self) {
@@ -238,24 +238,25 @@ impl fmt::Display for Ops {
 
 impl fmt::Debug for Ops {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let mut lines = vec![];
         if self.load.count > 0 {
-            write!(f, "{:?}", self.load)?;
+            lines.push(format!("{:?}", self.load));
         }
         if self.set.count > 0 {
-            write!(f, "\n{:?}", self.set)?;
+            lines.push(format!("{:?}", self.set));
         }
         if self.delete.count > 0 {
-            write!(f, "\n{:?}", self.delete)?;
+            lines.push(format!("{:?}", self.delete));
         }
         if self.get.count > 0 {
-            write!(f, "\n{:?}", self.get)?;
+            lines.push(format!("{:?}", self.get));
         }
         if self.range.count > 0 {
-            write!(f, "\n{:?}", self.range)?;
+            lines.push(format!("{:?}", self.range));
         }
         if self.reverse.count > 0 {
-            write!(f, "\n{:?}", self.reverse)?;
+            lines.push(format!("{:?}", self.reverse));
         }
-        Ok(())
+        write!(f, "{}", lines.join("\n"))
     }
 }

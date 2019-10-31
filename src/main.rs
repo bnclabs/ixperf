@@ -45,7 +45,7 @@ pub struct Opt {
     #[structopt(long = "ignore-error")]
     ignore_error: bool,
 
-    #[structopt(long = "percentile", default_value = "98")]
+    #[structopt(long = "percentile", default_value = "99")]
     percentile: String,
 
     #[structopt(short = "v", long = "verbose")]
@@ -136,8 +136,8 @@ fn main() {
     // PROFILER.lock().unwrap().start("./ixperf.prof").unwrap();
 
     let res = match p.index.as_str() {
-        "llrb-index" => mod_llrb::do_llrb_index(p),
-        "rdms" => mod_rdms::do_rdms_index(p),
+        "llrb-index" => mod_llrb::do_llrb_index("ixperf", p),
+        "rdms" => mod_rdms::do_rdms_index("ixperf", p),
         //"rdms-mvcc" => do_rdms_mvcc(p),
         //"rdms-robt" => do_rdms_robt(p),
         _ => Err(format!("unsupported index-type {}", p.index)),
@@ -150,21 +150,6 @@ fn main() {
     // PROFILER.lock().unwrap().stop().unwrap();
 }
 
-//
-//fn do_rdms_llrb(p: Profile) {
-//    match (p.key_type.as_str(), p.val_type.as_str()) {
-//        ("i32", "i32") => mod_rdms_llrb::perf::<i32, i32>(p),
-//        // ("i32", "array") => mod_rdms_llrb::perf::<i32, [u8; 32]>(p),
-//        ("i32", "bytes") => mod_rdms_llrb::perf::<i32, Vec<u8>>(p),
-//        ("i64", "i64") => mod_rdms_llrb::perf::<i64, i64>(p),
-//        // ("i64", "array") => mod_rdms_llrb::perf::<i64, [u8; 32]>(p),
-//        ("i64", "bytes") => mod_rdms_llrb::perf::<i64, Vec<u8>>(p),
-//        // ("array", "array") => mod_rdms_llrb::perf::<[u8; 32], [u8; 32]>(p),
-//        // ("array", "bytes") => mod_rdms_llrb::perf::<[u8; 32], Vec<u8>>(p),
-//        ("bytes", "bytes") => mod_rdms_llrb::perf::<Vec<u8>, Vec<u8>>(p),
-//        _ => panic!("unsupported key/value types {}/{}", p.key_type, p.val_type),
-//    }
-//}
 //
 //fn do_rdms_mvcc(p: Profile) {
 //    match (p.key_type.as_str(), p.val_type.as_str()) {

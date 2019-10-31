@@ -3,7 +3,7 @@
 index = "llrb-index"
 
 # Key-type for the index.
-key_type = "bytes"
+key_type = "array"
 
 # Value-type for the index
 value_type = "bytes"
@@ -20,16 +20,16 @@ value_size = 400
 seed = 0
 
 # Total number of initial load operations.
-loads = 10_000_000
+loads = 30_000_000
 
 # Total number of incremental set operations.
-sets = 0
+sets = 10_000_000
 
 # Total number of incremental delete operations.
-deletes = 0
+deletes = 10_000_000
 
 # Total number of get operations.
-gets = 0
+gets = 100_000_000
 
 # Total number of range iterations between a lower bound and upper bound.
 ranges = 0

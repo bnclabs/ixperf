@@ -7,17 +7,17 @@ use crate::generator::{Cmd, IncrementalLoad, InitialLoad, RandomKV};
 use crate::stats;
 use crate::Profile;
 
-pub fn do_llrb_index(p: Profile) -> Result<(), String> {
+pub fn do_llrb_index(name: &str, p: Profile) -> Result<(), String> {
     match (p.key_type.as_str(), p.val_type.as_str()) {
-        ("i32", "i32") => Ok(perf::<i32, i32>(p)),
-        ("i32", "array") => Ok(perf::<i32, [u8; 32]>(p)),
-        ("i32", "bytes") => Ok(perf::<i32, Vec<u8>>(p)),
-        ("i64", "i64") => Ok(perf::<i64, i64>(p)),
-        ("i64", "array") => Ok(perf::<i64, [u8; 32]>(p)),
-        ("i64", "bytes") => Ok(perf::<i64, Vec<u8>>(p)),
-        ("array", "array") => Ok(perf::<[u8; 32], [u8; 32]>(p)),
-        ("array", "bytes") => Ok(perf::<[u8; 32], Vec<u8>>(p)),
-        ("bytes", "bytes") => Ok(perf::<Vec<u8>, Vec<u8>>(p)),
+        ("i32", "i32") => Ok(perf::<i32, i32>(name, p)),
+        ("i32", "array") => Ok(perf::<i32, [u8; 20]>(name, p)),
+        ("i32", "bytes") => Ok(perf::<i32, Vec<u8>>(name, p)),
+        ("i64", "i64") => Ok(perf::<i64, i64>(name, p)),
+        ("i64", "array") => Ok(perf::<i64, [u8; 20]>(name, p)),
+        ("i64", "bytes") => Ok(perf::<i64, Vec<u8>>(name, p)),
+        ("array", "array") => Ok(perf::<[u8; 20], [u8; 20]>(name, p)),
+        ("array", "bytes") => Ok(perf::<[u8; 20], Vec<u8>>(name, p)),
+        ("bytes", "bytes") => Ok(perf::<Vec<u8>, Vec<u8>>(name, p)),
         _ => Err(format!(
             "unsupported key/value types {}/{}",
             p.key_type, p.val_type
@@ -25,14 +25,14 @@ pub fn do_llrb_index(p: Profile) -> Result<(), String> {
     }
 }
 
-fn perf<K, V>(p: Profile)
+fn perf<K, V>(name: &str, p: Profile)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
-    let mut index: Llrb<K, V> = Llrb::new("ixperf");
+    let mut index: Llrb<K, V> = Llrb::new(name);
     info!(
-        target: "llrbix",
+        target: "ixperf",
         "node overhead for llrb: {}", index.stats().node_size()
     );
 
@@ -40,7 +40,7 @@ where
     do_initial_load(&mut index, &p);
     let dur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
     info!(
-        target: "llrbix",
+        target: "ixperf",
         "initial-load completed {} items in {:?}", index.len(), dur
     );
 
@@ -57,7 +57,7 @@ where
 
     if p.g.iters {
         info!(
-            target: "llrbix",
+            target: "ixperf",
             "llrb took {:?} to iter over {} items", idur, iter_count
         );
     }
@@ -75,7 +75,7 @@ where
     }
 
     info!(
-        target: "llrbix",
+        target: "ixperf",
         "intial load for type <{},{}>", p.key_type, p.val_type
     );
     let mut fstats = stats::Ops::new();
@@ -91,12 +91,12 @@ where
             _ => unreachable!(),
         };
         if p.verbose && lstats.is_sec_elapsed() {
-            info!(target: "llrbix", "initial periodic-stats\n{}", lstats);
+            info!(target: "ixperf", "initial periodic-stats\n{}", lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
         }
     }
-    info!(target: "llrbix", "initial stats\n{:?}\n", fstats);
+    info!(target: "ixperf", "initial stats\n{:?}\n", fstats);
 }
 
 fn do_incremental<K, V>(index: &mut Llrb<K, V>, p: &Profile)
@@ -109,7 +109,7 @@ where
     }
 
     info!(
-        target: "llrbix",
+        target: "ixperf",
         "incremental load for type <{},{}>", p.key_type, p.val_type
     );
 
@@ -146,28 +146,27 @@ where
             _ => unreachable!(),
         };
         if p.verbose && lstats.is_sec_elapsed() {
-            info!(target: "llrbix", "incremental periodic-stats\n{}", lstats);
+            info!(target: "ixperf", "incremental periodic-stats\n{}", lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
         }
     }
 
-    info!(target: "llrbix", "incremental stats\n{:?}", lstats);
+    info!(target: "ixperf", "incremental stats\n{:?}", fstats);
 }
 
-fn validate<K, V>(_index: Llrb<K, V>, _p: Profile)
+fn validate<K, V>(index: Llrb<K, V>, _p: Profile)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
-    // TODO
-    //info!(
-    //    target: "llrbix",
-    //    "begin validation for llrb index {} ...", index.to_name()
-    //);
+    info!(
+        target: "ixperf",
+        "begin validation for llrb index {} ...", index.id()
+    );
 
-    //match index.validate() {
-    //    Ok(stats) => (),
-    //    Err(err) => panic!(err),
-    //}
+    match index.validate() {
+        Ok(_stats) => (), // TODO: validate stats.
+        Err(err) => panic!(err),
+    }
 }

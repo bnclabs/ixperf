@@ -100,7 +100,6 @@ impl Latency {
     #[allow(dead_code)] // TODO: remove this once ixperf stabilizes.
     pub fn to_json(&self) -> String {
         let total = self.total.as_nanos();
-        let rate = (self.samples as u128) / (total / 1_000_000_000);
         let ps: Vec<String> = self
             .to_percentiles()
             .into_iter()
@@ -109,7 +108,6 @@ impl Latency {
         let strs = [
             format!(r#""n": {}"#, self.samples),
             format!(r#""elapsed": {}"#, total),
-            format!(r#""rate": {}"#, rate),
             format!(r#""min": {}"#, self.min),
             format!(r#""mean": {}"#, self.to_mean()),
             format!(r#""max": {}"#, self.max),
@@ -125,8 +123,6 @@ impl fmt::Display for Latency {
             return Ok(());
         }
 
-        let total = self.total.as_nanos();
-        let rate = (self.samples as f64) / (total as f64 / 1_000_000_000.0);
         let props: Vec<String> = self
             .to_percentiles()
             .into_iter()
@@ -136,12 +132,11 @@ impl fmt::Display for Latency {
         write!(
             f,
             concat!(
-                "{{ n={}, elapsed={}, rate={}, min={}, ",
+                "{{ n={}, elapsed={}, min={}, ",
                 "mean={}, max={}, latencies={{ {} }} }}"
             ),
             self.samples,
             self.total.as_nanos(),
-            rate as u64,
             self.min,
             self.to_mean(),
             self.max,
@@ -152,8 +147,6 @@ impl fmt::Display for Latency {
 
 impl fmt::Debug for Latency {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let total = self.total.as_nanos();
-        let rate = (self.samples as f64) / (total as f64 / 1_000_000_000.0);
         let props: Vec<String> = self
             .to_percentiles()
             .into_iter()
@@ -176,7 +169,6 @@ impl fmt::Debug for Latency {
             f,
             "{}.latency.percentiles = {{ {} }}\n",
             self.name, latencies
-        )?;
-        write!(f, "rate: {}/sec", rate as u64)
+        )
     }
 }
