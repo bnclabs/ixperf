@@ -192,6 +192,7 @@ pub struct Profile {
     pub g: generator::GenOptions,
     pub rdms: mod_rdms::RdmsOpt,
     pub rdms_llrb: mod_rdms::LlrbOpt,
+    pub rdms_mvcc: mod_rdms::MvccOpt,
 }
 
 impl TryFrom<toml::Value> for Profile {
@@ -212,6 +213,9 @@ impl TryFrom<toml::Value> for Profile {
             .ok()
             .unwrap_or(Default::default());
         p.rdms_llrb = TryFrom::try_from(value.clone())
+            .ok()
+            .unwrap_or(Default::default());
+        p.rdms_mvcc = TryFrom::try_from(value.clone())
             .ok()
             .unwrap_or(Default::default());
         Ok(p)

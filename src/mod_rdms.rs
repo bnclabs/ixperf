@@ -58,6 +58,51 @@ impl LlrbOpt {
 }
 
 #[derive(Default, Clone)]
+pub struct MvccOpt {
+    lsm: bool,
+    sticky: bool,
+    spin: bool,
+}
+
+impl TryFrom<toml::Value> for MvccOpt {
+    type Error = String;
+
+    fn try_from(value: toml::Value) -> Result<Self, Self::Error> {
+        let mut mvcc_opt: MvccOpt = Default::default();
+
+        let section = match &value.get("rdms-mvcc") {
+            None => return Err("not found".to_string()),
+            Some(section) => section.clone(),
+        };
+        for (name, value) in section.as_table().unwrap().iter() {
+            match name.as_str() {
+                "lsm" => mvcc_opt.lsm = value.as_bool().unwrap(),
+                "sticky" => mvcc_opt.sticky = value.as_bool().unwrap(),
+                "spin" => mvcc_opt.spin = value.as_bool().unwrap(),
+                _ => panic!("invalid profile parameter {}", name),
+            }
+        }
+        Ok(mvcc_opt)
+    }
+}
+
+impl MvccOpt {
+    fn new<K, V>(&self, name: &str) -> Box<rdms::mvcc::Mvcc<K, V>>
+    where
+        K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
+        V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
+    {
+        let mut index = if self.lsm {
+            rdms::mvcc::Mvcc::new_lsm(name)
+        } else {
+            rdms::mvcc::Mvcc::new(name)
+        };
+        index.set_sticky(self.sticky).set_spinlatch(self.spin);
+        index
+    }
+}
+
+#[derive(Default, Clone)]
 pub struct RdmsOpt {
     index: String,
     commit_interval: u64,
@@ -139,6 +184,19 @@ where
 
             let stats = index.validate().unwrap(); // TODO: validate stats
             info!(target: "ixperf", "rdms llrb stats\n{}", stats);
+        }
+        "mvcc" => {
+            let mvcc_index = p.rdms_mvcc.new(name);
+            let mut index = rdms::Rdms::new(name, mvcc_index).unwrap();
+            if p.rdms.commit_interval > 0 {
+                let interval = Duration::from_secs(p.rdms.commit_interval);
+                index.set_commit_interval(interval);
+            }
+
+            perf1::<K, V, Box<rdms::mvcc::Mvcc<K, V>>>(&mut index, p);
+
+            let stats = index.validate().unwrap(); // TODO: validate stats
+            info!(target: "ixperf", "rdms mvcc stats\n{}", stats);
         }
         name => panic!("unsupported index {}", name),
     }
