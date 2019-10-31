@@ -425,8 +425,11 @@ fn merge_toml(one: toml::Value, two: toml::Value) -> toml::Value {
         (Integer(m), Integer(n)) => toml::Value::Integer(m + n),
         (Table(x), Table(y)) => {
             let mut three = toml::map::Map::new();
-            for (name, v) in x.iter() {
-                let v = merge_toml(v.clone(), y.get(name).unwrap().clone());
+            for (name, xv) in x.iter() {
+                let v = match y.get(name) {
+                    Some(yv) => merge_toml(xv.clone(), yv.clone()),
+                    None => xv.clone(),
+                };
                 three.insert(name.clone(), v);
             }
             toml::Value::Table(three)
