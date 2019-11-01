@@ -1,4 +1,5 @@
 #![feature(result_map_or_else)]
+#![feature(test)]
 
 mod generator;
 mod latency;
@@ -132,8 +133,8 @@ fn main() {
     info!(target: "main  ", "starting with seed = {}", p.g.seed);
 
     // TODO - enable this via feature gating.
-    // use cpuprofiler::PROFILER;
-    // PROFILER.lock().unwrap().start("./ixperf.prof").unwrap();
+    use cpuprofiler::PROFILER;
+    PROFILER.lock().unwrap().start("./ixperf.prof").unwrap();
 
     let res = match p.index.as_str() {
         "llrb-index" => mod_llrb::do_llrb_index("ixperf", p),
@@ -147,7 +148,7 @@ fn main() {
         _ => (),
     };
 
-    // PROFILER.lock().unwrap().stop().unwrap();
+    PROFILER.lock().unwrap().stop().unwrap();
 }
 
 //
