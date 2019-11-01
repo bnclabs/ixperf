@@ -96,6 +96,8 @@ where
             lstats = stats::Ops::new();
         }
     }
+    fstats.merge(&lstats);
+
     info!(target: "ixperf", "initial stats\n{:?}\n", fstats);
 }
 
@@ -151,6 +153,7 @@ where
             lstats = stats::Ops::new();
         }
     }
+    fstats.merge(&lstats);
 
     info!(target: "ixperf", "incremental stats\n{:?}", fstats);
 }

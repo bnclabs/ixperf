@@ -19,16 +19,16 @@ value_size = 400
 seed = 0
 
 # Total number of initial load operations.
-loads = 30_000_000
+loads = 10_000_000
 
 # Total number of incremental set operations.
 sets = 10_000_000
 
 # Total number of incremental delete operations.
-deletes = 10_000_000
+deletes = 0
 
 # Total number of get operations.
-gets = 100_000_000
+gets = 30_000_000
 
 # Total number of range iterations between a lower bound and upper bound.
 ranges = 0
@@ -43,12 +43,20 @@ iters = true
 channel_size = 100_000
 
 [rdms]
-index = "llrb"
+index = "mvcc"
 commit_interval = 0 # in seconds.
-readers = 0
-writers = 0
+readers = 4
+writers = 1
 
 [rdms-llrb]
+# create llrb with log-structured-merge.
+lsm = false
+# create llrb in sticky mode.
+sticky = false
+# spin while waiting for lock
+spin = true
+
+[rdms-mvcc]
 # create llrb with log-structured-merge.
 lsm = false
 # create llrb in sticky mode.
