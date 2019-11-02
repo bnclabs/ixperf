@@ -3,11 +3,11 @@ use std::fmt;
 use crate::latency::Latency;
 
 pub struct Op {
-    name: String,
-    latency: Latency,
-    count: usize,
-    items: usize,
-    force: bool,
+    pub name: String,
+    pub latency: Latency,
+    pub count: usize,
+    pub items: usize,
+    pub force: bool,
 }
 
 impl Op {
@@ -125,12 +125,12 @@ impl fmt::Debug for Op {
             )?,
             "delete" | "get" => write!(
                 f,
-                "{} = {{ ops={}, missing={} }}",
+                "{} = {{ ops={}, missing={} }}\n",
                 self.name, self.count, self.items,
             )?,
             "range" | "reverse" => write!(
                 f,
-                "{} = {{ ops={}, items={} }}",
+                "{} = {{ ops={}, items={} }}\n",
                 self.name, self.count, self.items,
             )?,
             _ => unreachable!(),

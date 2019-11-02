@@ -1,5 +1,10 @@
 use log::info;
-use rdms::{self, Diff, Footprint, Index, Reader, Writer};
+use rdms::{
+    self,
+    llrb::{Llrb, Stats as LlrbStats},
+    mvcc::{Mvcc, Stats as MvccStats},
+    Diff, Footprint, Index, Reader, Writer,
+};
 
 use std::{
     convert::{TryFrom, TryInto},
@@ -42,15 +47,15 @@ impl TryFrom<toml::Value> for LlrbOpt {
 }
 
 impl LlrbOpt {
-    fn new<K, V>(&self, name: &str) -> Box<rdms::llrb::Llrb<K, V>>
+    fn new<K, V>(&self, name: &str) -> Box<Llrb<K, V>>
     where
         K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
         V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
     {
         let mut index = if self.lsm {
-            rdms::llrb::Llrb::new_lsm(name)
+            Llrb::new_lsm(name)
         } else {
-            rdms::llrb::Llrb::new(name)
+            Llrb::new(name)
         };
         index.set_sticky(self.sticky).set_spinlatch(self.spin);
         index
@@ -87,15 +92,15 @@ impl TryFrom<toml::Value> for MvccOpt {
 }
 
 impl MvccOpt {
-    fn new<K, V>(&self, name: &str) -> Box<rdms::mvcc::Mvcc<K, V>>
+    fn new<K, V>(&self, name: &str) -> Box<Mvcc<K, V>>
     where
         K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
         V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
     {
         let mut index = if self.lsm {
-            rdms::mvcc::Mvcc::new_lsm(name)
+            Mvcc::new_lsm(name)
         } else {
-            rdms::mvcc::Mvcc::new(name)
+            Mvcc::new(name)
         };
         index.set_sticky(self.sticky).set_spinlatch(self.spin);
         index
@@ -180,10 +185,11 @@ where
                 index.set_commit_interval(interval);
             }
 
-            perf1::<K, V, Box<rdms::llrb::Llrb<K, V>>>(&mut index, p);
+            let fstats = perf1::<K, V, Box<Llrb<K, V>>>(&mut index, &p);
 
-            let stats = index.validate().unwrap(); // TODO: validate stats
-            info!(target: "ixperf", "rdms llrb stats\n{}", stats);
+            let istats = index.validate().unwrap();
+            validate_llrb(&istats, &fstats, &p);
+            info!(target: "ixperf", "rdms llrb stats\n{}", istats);
         }
         "mvcc" => {
             let mvcc_index = p.rdms_mvcc.new(name);
@@ -193,16 +199,17 @@ where
                 index.set_commit_interval(interval);
             }
 
-            perf1::<K, V, Box<rdms::mvcc::Mvcc<K, V>>>(&mut index, p);
+            let fstats = perf1::<K, V, Box<Mvcc<K, V>>>(&mut index, &p);
 
-            let stats = index.validate().unwrap(); // TODO: validate stats
-            info!(target: "ixperf", "rdms mvcc stats\n{}", stats);
+            let istats = index.validate().unwrap();
+            validate_mvcc(&istats, &fstats, &p);
+            info!(target: "ixperf", "rdms mvcc stats\n{}", istats);
         }
         name => panic!("unsupported index {}", name),
     }
 }
 
-fn perf1<K, V, I>(index: &mut rdms::Rdms<K, V, I>, p: Profile)
+fn perf1<K, V, I>(index: &mut rdms::Rdms<K, V, I>, p: &Profile) -> stats::Ops
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
@@ -224,8 +231,9 @@ where
     }
     let idur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
 
-    if p.rdms.threads() == 0 && (p.g.read_ops() + p.g.write_ops()) > 0 {
-        do_incremental(index, &p);
+    let total_ops = p.g.read_ops() + p.g.write_ops();
+    let fstats = if p.rdms.threads() == 0 && total_ops > 0 {
+        do_incremental(index, &p)
     } else if (p.g.read_ops() + p.g.write_ops()) > 0 {
         let mut threads = vec![];
         for i in 0..p.rdms.readers {
@@ -238,10 +246,14 @@ where
             let pr = p.clone();
             threads.push(thread::spawn(move || do_write(i, w, pr)));
         }
+        let mut fstats = stats::Ops::new();
         for t in threads {
-            t.join().unwrap()
+            fstats.merge(&t.join().unwrap());
         }
-    }
+        fstats
+    } else {
+        stats::Ops::new()
+    };
 
     if p.g.iters {
         info!(
@@ -249,16 +261,20 @@ where
             "rdms took {:?} to iter over {} items", idur, iter_count
         );
     }
+    fstats
 }
 
-fn do_initial_load<K, V, I>(index: &mut rdms::Rdms<K, V, I>, p: &Profile)
+fn do_initial_load<K, V, I>(
+    index: &mut rdms::Rdms<K, V, I>, // index
+    p: &Profile,
+) -> stats::Ops
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
     I: Index<K, V>,
 {
     if p.g.loads == 0 {
-        return;
+        return stats::Ops::new();
     }
 
     info!(
@@ -287,16 +303,20 @@ where
     fstats.merge(&lstats);
 
     info!(target: "ixperf", "initial stats\n{:?}\n", fstats);
+    fstats
 }
 
-fn do_incremental<K, V, I>(index: &mut rdms::Rdms<K, V, I>, p: &Profile)
+fn do_incremental<K, V, I>(
+    index: &mut rdms::Rdms<K, V, I>, // index
+    p: &Profile,
+) -> stats::Ops
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
     I: Index<K, V>,
 {
     if (p.g.read_ops() + p.g.write_ops()) == 0 {
-        return;
+        return stats::Ops::new();
     }
 
     info!(
@@ -312,16 +332,19 @@ where
     for (_i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Set { key, value } => {
+                println!("set");
                 lstats.set.sample_start(false);
                 let n = w.set(key, value.clone()).unwrap().map_or(0, |_| 1);
                 lstats.set.sample_end(n);
             }
             Cmd::Delete { key } => {
+                println!("delete");
                 lstats.delete.sample_start(false);
                 let items = w.delete(&key).ok().map_or(1, |_| 0);
                 lstats.delete.sample_end(items);
             }
             Cmd::Get { key } => {
+                println!("get");
                 lstats.get.sample_start(false);
                 let items = r.get(&key).ok().map_or(1, |_| 0);
                 lstats.get.sample_end(items);
@@ -347,16 +370,17 @@ where
     fstats.merge(&lstats);
 
     info!(target: "ixperf", "incremental stats\n{:?}", fstats);
+    fstats
 }
 
-fn do_read<R, K, V>(id: usize, mut r: R, p: Profile)
+fn do_read<R, K, V>(id: usize, mut r: R, p: Profile) -> stats::Ops
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
     R: Reader<K, V>,
 {
     if p.g.read_ops() == 0 {
-        return;
+        return stats::Ops::new();
     }
 
     info!(
@@ -395,16 +419,17 @@ where
     fstats.merge(&lstats);
 
     info!(target: "ixperf", "reader-{} stats {:?}", id, fstats);
+    fstats
 }
 
-fn do_write<W, K, V>(id: usize, mut w: W, p: Profile)
+fn do_write<W, K, V>(id: usize, mut w: W, p: Profile) -> stats::Ops
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
     W: Writer<K, V>,
 {
     if p.g.write_ops() == 0 {
-        return;
+        return stats::Ops::new();
     }
 
     info!(
@@ -438,4 +463,17 @@ where
     fstats.merge(&lstats);
 
     info!(target: "ixperf", "writer-{} stats\n{:?}", id, fstats);
+    fstats
+}
+
+fn validate_llrb(stats: &LlrbStats, fstats: &stats::Ops, p: &Profile) {
+    if p.rdms_llrb.lsm || p.rdms_llrb.sticky {
+        assert_eq!(stats.n_deleted, fstats.delete.count)
+    }
+}
+
+fn validate_mvcc(stats: &MvccStats, fstats: &stats::Ops, p: &Profile) {
+    if p.rdms_mvcc.lsm || p.rdms_mvcc.sticky {
+        assert_eq!(stats.n_deleted, fstats.delete.count)
+    }
 }

@@ -326,4 +326,5 @@ impl TryFrom<toml::Value> for Profile {
 //    }
 //}
 
+#[cfg(test)]
 mod jealloc_bench;
