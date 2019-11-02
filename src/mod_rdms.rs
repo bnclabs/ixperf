@@ -188,8 +188,8 @@ where
             let fstats = perf1::<K, V, Box<Llrb<K, V>>>(&mut index, &p);
 
             let istats = index.validate().unwrap();
-            validate_llrb(&istats, &fstats, &p);
             info!(target: "ixperf", "rdms llrb stats\n{}", istats);
+            validate_llrb(&istats, &fstats, &p);
         }
         "mvcc" => {
             let mvcc_index = p.rdms_mvcc.new(name);
@@ -202,8 +202,8 @@ where
             let fstats = perf1::<K, V, Box<Mvcc<K, V>>>(&mut index, &p);
 
             let istats = index.validate().unwrap();
-            validate_mvcc(&istats, &fstats, &p);
             info!(target: "ixperf", "rdms mvcc stats\n{}", istats);
+            validate_mvcc(&istats, &fstats, &p);
         }
         name => panic!("unsupported index {}", name),
     }
@@ -218,7 +218,7 @@ where
     <I as Index<K, V>>::W: 'static + Send + Sync,
 {
     let start = SystemTime::now();
-    do_initial_load(index, &p);
+    let mut fstats = do_initial_load(index, &p);
     let dur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
     info!(target: "ixperf", "initial-load completed in {:?}", dur);
 
@@ -233,7 +233,8 @@ where
 
     let total_ops = p.g.read_ops() + p.g.write_ops();
     let fstats = if p.rdms.threads() == 0 && total_ops > 0 {
-        do_incremental(index, &p)
+        fstats.merge(&do_incremental(index, &p));
+        fstats
     } else if (p.g.read_ops() + p.g.write_ops()) > 0 {
         let mut threads = vec![];
         for i in 0..p.rdms.readers {
@@ -246,13 +247,12 @@ where
             let pr = p.clone();
             threads.push(thread::spawn(move || do_write(i, w, pr)));
         }
-        let mut fstats = stats::Ops::new();
         for t in threads {
             fstats.merge(&t.join().unwrap());
         }
         fstats
     } else {
-        stats::Ops::new()
+        fstats
     };
 
     if p.g.iters {
@@ -332,19 +332,16 @@ where
     for (_i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Set { key, value } => {
-                println!("set");
                 lstats.set.sample_start(false);
                 let n = w.set(key, value.clone()).unwrap().map_or(0, |_| 1);
                 lstats.set.sample_end(n);
             }
             Cmd::Delete { key } => {
-                println!("delete");
                 lstats.delete.sample_start(false);
-                let items = w.delete(&key).ok().map_or(1, |_| 0);
+                let items = w.delete(&key).unwrap().map_or(1, |_| 0);
                 lstats.delete.sample_end(items);
             }
             Cmd::Get { key } => {
-                println!("get");
                 lstats.get.sample_start(false);
                 let items = r.get(&key).ok().map_or(1, |_| 0);
                 lstats.get.sample_end(items);
@@ -444,12 +441,12 @@ where
         match cmd {
             Cmd::Set { key, value } => {
                 lstats.set.sample_start(false);
-                let n = w.set(key, value.clone()).map_or_else(|_| 0, |_| 1);
+                let n = w.set(key, value.clone()).unwrap().map_or(0, |_| 1);
                 lstats.set.sample_end(n);
             }
             Cmd::Delete { key } => {
                 lstats.delete.sample_start(false);
-                let items = w.delete(&key).map_or_else(|_| 0, |_| 1);
+                let items = w.delete(&key).unwrap().map_or(0, |_| 1);
                 lstats.delete.sample_end(items);
             }
             _ => unreachable!(),
@@ -467,13 +464,27 @@ where
 }
 
 fn validate_llrb(stats: &LlrbStats, fstats: &stats::Ops, p: &Profile) {
-    if p.rdms_llrb.lsm || p.rdms_llrb.sticky {
-        assert_eq!(stats.n_deleted, fstats.delete.count)
+    if p.rdms_llrb.lsm == false && p.rdms_llrb.sticky == false {
+        let expected_entries = (fstats.load.count - fstats.load.items)
+            + (fstats.set.count - fstats.set.items)
+            - (fstats.delete.count - fstats.delete.items);
+        assert_eq!(stats.entries, expected_entries);
     }
+
+    //if p.rdms_llrb.lsm || p.rdms_llrb.sticky {
+    //    assert_eq!(stats.n_deleted, fstats.delete.count)
+    //}
 }
 
 fn validate_mvcc(stats: &MvccStats, fstats: &stats::Ops, p: &Profile) {
-    if p.rdms_mvcc.lsm || p.rdms_mvcc.sticky {
-        assert_eq!(stats.n_deleted, fstats.delete.count)
+    if p.rdms_mvcc.lsm == false && p.rdms_mvcc.sticky == false {
+        let expected_entries = (fstats.load.count - fstats.load.items)
+            + (fstats.set.count - fstats.set.items)
+            - (fstats.delete.count - fstats.delete.items);
+        assert_eq!(stats.entries, expected_entries);
     }
+
+    //if p.rdms_mvcc.lsm || p.rdms_mvcc.sticky {
+    //    assert_eq!(stats.n_deleted, fstats.delete.count)
+    //}
 }
