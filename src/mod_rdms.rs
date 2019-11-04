@@ -446,7 +446,10 @@ where
             }
             Cmd::Delete { key } => {
                 lstats.delete.sample_start(false);
-                let items = w.delete(&key).unwrap().map_or(0, |_| 1);
+                let items = w
+                    .delete(&key)
+                    .unwrap()
+                    .map_or(1, |e| if e.is_deleted() { 1 } else { 0 });
                 lstats.delete.sample_end(items);
             }
             _ => unreachable!(),
@@ -464,27 +467,29 @@ where
 }
 
 fn validate_llrb(stats: &LlrbStats, fstats: &stats::Ops, p: &Profile) {
-    if p.rdms_llrb.lsm == false && p.rdms_llrb.sticky == false {
+    if p.rdms_llrb.lsm || p.rdms_llrb.sticky {
+        let expected_entries = (fstats.load.count - fstats.load.items)
+            + (fstats.set.count - fstats.set.items)
+            + fstats.delete.items;
+        assert_eq!(stats.entries, expected_entries);
+    } else {
         let expected_entries = (fstats.load.count - fstats.load.items)
             + (fstats.set.count - fstats.set.items)
             - (fstats.delete.count - fstats.delete.items);
         assert_eq!(stats.entries, expected_entries);
     }
-
-    //if p.rdms_llrb.lsm || p.rdms_llrb.sticky {
-    //    assert_eq!(stats.n_deleted, fstats.delete.count)
-    //}
 }
 
 fn validate_mvcc(stats: &MvccStats, fstats: &stats::Ops, p: &Profile) {
-    if p.rdms_mvcc.lsm == false && p.rdms_mvcc.sticky == false {
+    if p.rdms_mvcc.lsm || p.rdms_mvcc.sticky {
+        let expected_entries = (fstats.load.count - fstats.load.items)
+            + (fstats.set.count - fstats.set.items)
+            + fstats.delete.items;
+        assert_eq!(stats.entries, expected_entries);
+    } else {
         let expected_entries = (fstats.load.count - fstats.load.items)
             + (fstats.set.count - fstats.set.items)
             - (fstats.delete.count - fstats.delete.items);
         assert_eq!(stats.entries, expected_entries);
     }
-
-    //if p.rdms_mvcc.lsm || p.rdms_mvcc.sticky {
-    //    assert_eq!(stats.n_deleted, fstats.delete.count)
-    //}
 }

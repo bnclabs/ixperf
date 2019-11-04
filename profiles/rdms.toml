@@ -43,7 +43,7 @@ iters = true
 channel_size = 100_000
 
 [rdms]
-index = "mvcc"
+index = "llrb"
 commit_interval = 0 # in seconds.
 readers = 0
 writers = 0
@@ -52,7 +52,7 @@ writers = 0
 # create llrb with log-structured-merge.
 lsm = false
 # create llrb in sticky mode.
-sticky = false
+sticky = true
 # spin while waiting for lock
 spin = true
 
