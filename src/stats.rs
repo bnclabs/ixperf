@@ -160,14 +160,12 @@ impl Ops {
         }
     }
 
-    #[allow(dead_code)] // TODO: remove this once ixperf stabilizes.
-    pub fn to_total(&self) -> usize {
-        self.load.count
-            + self.set.count
-            + self.delete.count
-            + self.get.count
-            + self.range.count
-            + self.reverse.count
+    pub fn to_total_reads(&self) -> usize {
+        self.get.count + self.range.count + self.reverse.count
+    }
+
+    pub fn to_total_writes(&self) -> usize {
+        self.load.count + self.set.count + self.delete.count
     }
 
     pub fn is_sec_elapsed(&self) -> bool {

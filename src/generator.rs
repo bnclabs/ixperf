@@ -48,7 +48,10 @@ impl TryFrom<toml::Value> for GenOptions {
                 "seed" => gen_opts.seed = utils::toml_to_u128(value),
                 "key_size" => gen_opts.key_size = utils::toml_to_usize(value),
                 "value_size" => gen_opts.val_size = utils::toml_to_usize(value),
-                "channel_size" => gen_opts.channel_size = utils::toml_to_usize(value),
+                "channel_size" => {
+                    // something
+                    gen_opts.channel_size = utils::toml_to_usize(value)
+                }
                 "loads" => gen_opts.loads = utils::toml_to_usize(value),
                 "sets" => gen_opts.sets = utils::toml_to_usize(value),
                 "deletes" => gen_opts.deletes = utils::toml_to_usize(value),
@@ -338,8 +341,8 @@ pub enum Cmd<K, V> {
 
 impl<K, V> Cmd<K, V>
 where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
+    K: Clone + Default + RandomKV,
+    V: Clone + Default + RandomKV,
 {
     pub fn gen_load(rng: &mut SmallRng, g: &GenOptions) -> Cmd<K, V> {
         let (key, value): (K, V) = unsafe { (mem::zeroed(), mem::zeroed()) };

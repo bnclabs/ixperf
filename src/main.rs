@@ -190,6 +190,10 @@ pub struct Profile {
     pub key_type: String,
     pub val_type: String,
     pub verbose: bool,
+
+    pub key_footprint: usize,
+    pub value_footprint: usize,
+
     pub g: generator::GenOptions,
     pub rdms: mod_rdms::RdmsOpt,
     pub rdms_llrb: mod_rdms::LlrbOpt,

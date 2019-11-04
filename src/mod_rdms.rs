@@ -1,4 +1,5 @@
 use log::info;
+use rand::{rngs::SmallRng, SeedableRng};
 use rdms::{
     self,
     llrb::{Llrb, Stats as LlrbStats},
@@ -189,7 +190,7 @@ where
 
             let istats = index.validate().unwrap();
             info!(target: "ixperf", "rdms llrb stats\n{}", istats);
-            validate_llrb(&istats, &fstats, &p);
+            validate_llrb::<K, V>(&istats, &fstats, &p);
         }
         "mvcc" => {
             let mvcc_index = p.rdms_mvcc.new(name);
@@ -203,7 +204,7 @@ where
 
             let istats = index.validate().unwrap();
             info!(target: "ixperf", "rdms mvcc stats\n{}", istats);
-            validate_mvcc(&istats, &fstats, &p);
+            validate_mvcc::<K, V>(&istats, &fstats, &p);
         }
         name => panic!("unsupported index {}", name),
     }
@@ -446,10 +447,7 @@ where
             }
             Cmd::Delete { key } => {
                 lstats.delete.sample_start(false);
-                let items = w
-                    .delete(&key)
-                    .unwrap()
-                    .map_or(1, |e| if e.is_deleted() { 1 } else { 0 });
+                let items = w.delete(&key).unwrap().map_or(1, |_| 0);
                 lstats.delete.sample_end(items);
             }
             _ => unreachable!(),
@@ -466,7 +464,11 @@ where
     fstats
 }
 
-fn validate_llrb(stats: &LlrbStats, fstats: &stats::Ops, p: &Profile) {
+fn validate_llrb<K, V>(stats: &LlrbStats, fstats: &stats::Ops, p: &Profile)
+where
+    K: Clone + Default + Ord + Footprint + fmt::Debug + RandomKV,
+    V: Clone + Default + Diff + Footprint + RandomKV,
+{
     if p.rdms_llrb.lsm || p.rdms_llrb.sticky {
         let expected_entries = (fstats.load.count - fstats.load.items)
             + (fstats.set.count - fstats.set.items)
@@ -478,9 +480,40 @@ fn validate_llrb(stats: &LlrbStats, fstats: &stats::Ops, p: &Profile) {
             - (fstats.delete.count - fstats.delete.items);
         assert_eq!(stats.entries, expected_entries);
     }
+
+    assert_eq!(stats.rw_latch.read_locks, fstats.to_total_reads() + 3);
+    assert_eq!(stats.rw_latch.write_locks, fstats.to_total_writes());
+    if fstats.to_total_reads() == 0 || fstats.to_total_writes() == 0 {
+        assert_eq!(stats.rw_latch.conflicts, 0);
+    }
+
+    if p.rdms_llrb.lsm == false {
+        let mut rng = SmallRng::from_seed(p.g.seed.to_le_bytes());
+        let (kfp, vfp) = match Cmd::<K, V>::gen_load(&mut rng, &p.g) {
+            Cmd::Load { key, value } => (
+                key.footprint().unwrap() as usize,
+                value.footprint().unwrap() as usize,
+            ),
+            _ => unreachable!(),
+        };
+        let (entries, vfp) = (stats.entries, vfp + std::mem::size_of::<V>());
+
+        let key_footprint: isize = (kfp * entries).try_into().unwrap();
+        assert_eq!(stats.key_footprint, key_footprint);
+
+        let mut tree_footprint: isize = ((stats.node_size + kfp + vfp) * entries)
+            .try_into()
+            .unwrap();
+        tree_footprint -= (vfp * stats.n_deleted) as isize; // for sticky mode.
+        assert_eq!(stats.tree_footprint, tree_footprint);
+    }
 }
 
-fn validate_mvcc(stats: &MvccStats, fstats: &stats::Ops, p: &Profile) {
+fn validate_mvcc<K, V>(stats: &MvccStats, fstats: &stats::Ops, p: &Profile)
+where
+    K: Clone + Default + Ord + Footprint + fmt::Debug + RandomKV,
+    V: Clone + Default + Diff + Footprint + RandomKV,
+{
     if p.rdms_mvcc.lsm || p.rdms_mvcc.sticky {
         let expected_entries = (fstats.load.count - fstats.load.items)
             + (fstats.set.count - fstats.set.items)
@@ -491,5 +524,37 @@ fn validate_mvcc(stats: &MvccStats, fstats: &stats::Ops, p: &Profile) {
             + (fstats.set.count - fstats.set.items)
             - (fstats.delete.count - fstats.delete.items);
         assert_eq!(stats.entries, expected_entries);
+    }
+
+    assert_eq!(stats.rw_latch.write_locks, fstats.to_total_writes());
+    if fstats.to_total_reads() == 0 || fstats.to_total_writes() == 0 {
+        assert_eq!(stats.rw_latch.conflicts, 0);
+    }
+
+    assert_eq!(stats.snapshot_latch.read_locks, fstats.to_total_reads() + 3);
+    assert_eq!(stats.snapshot_latch.write_locks, fstats.to_total_writes());
+    if fstats.to_total_reads() == 0 || fstats.to_total_writes() == 0 {
+        assert_eq!(stats.snapshot_latch.conflicts, 0);
+    }
+
+    if p.rdms_mvcc.lsm == false {
+        let mut rng = SmallRng::from_seed(p.g.seed.to_le_bytes());
+        let (kfp, vfp) = match Cmd::<K, V>::gen_load(&mut rng, &p.g) {
+            Cmd::Load { key, value } => (
+                key.footprint().unwrap() as usize,
+                value.footprint().unwrap() as usize,
+            ),
+            _ => unreachable!(),
+        };
+        let (entries, vfp) = (stats.entries, vfp + std::mem::size_of::<V>());
+
+        let key_footprint: isize = (kfp * entries).try_into().unwrap();
+        assert_eq!(stats.key_footprint, key_footprint);
+
+        let mut tree_footprint: isize = ((stats.node_size + kfp + vfp) * entries)
+            .try_into()
+            .unwrap();
+        tree_footprint -= (vfp * stats.n_deleted) as isize; // for sticky mode.
+        assert_eq!(stats.tree_footprint, tree_footprint);
     }
 }
