@@ -4,7 +4,7 @@ use rdms::{
     self,
     llrb::{Llrb, Stats as LlrbStats},
     mvcc::{Mvcc, Stats as MvccStats},
-    Diff, Footprint, Index, Reader, Writer,
+    Diff, Footprint, Index, Reader, Validate, Writer,
 };
 
 use std::{
