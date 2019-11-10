@@ -333,13 +333,19 @@ impl FromStr for PlotOps {
 }
 
 pub fn do_plot(opt: Opt) -> Result<(), String> {
+    let data = parse_log(&opt)?;
+    data.render(&opt);
+    Ok(())
+}
+
+fn parse_log(opt: &Opt) -> Result<PlotData, String> {
     match &validate_log(&opt) {
         Ok(_) => (),
         Err(_err) if opt.ignore_error => (),
         Err(err) => return Err(err.clone()),
     }
 
-    let re1 = Regex::new(r"\[.*\] (.+) periodic-stats").unwrap();
+    let re1 = Regex::new(r"\[[0-9]{4}[^\]]*\].*").unwrap();
 
     let mut title_initial: Vec<toml::Value> = vec![];
     let mut title_incrmnt: Vec<toml::Value> = vec![];
@@ -371,14 +377,21 @@ pub fn do_plot(opt: Opt) -> Result<(), String> {
         file.read_to_end(&mut buf).unwrap();
         let s = std::str::from_utf8(&buf).unwrap();
         let lines: Vec<&str> = s.lines().collect();
-        let line_nos: Vec<usize> = lines
-            .iter()
-            .enumerate()
-            .filter_map(|(i, l)| if re1.is_match(*l) { Some(i) } else { None })
-            .collect();
-        let items: Vec<(String, usize, toml::Value)> = line_nos
+
+        let mut log_msgs: Vec<String> = vec![];
+        for line in lines {
+            if re1.is_match(line) {
+                log_msgs.push(line.to_string())
+            } else {
+                let ln = log_msgs.len() - 1;
+                log_msgs[ln].push('\n');
+                log_msgs[ln].push_str(line)
+            }
+        }
+
+        let items: Vec<(String, usize, toml::Value)> = log_msgs
             .into_iter()
-            .map(|line_no| parse_periodic_stats(&lines[line_no..]))
+            .filter_map(|msg| parse_periodic_stats(msg))
             .collect();
         let max_writers = items
             .iter()
@@ -408,14 +421,12 @@ pub fn do_plot(opt: Opt) -> Result<(), String> {
             }
         }
     }
-    let data = PlotData {
+    Ok(PlotData {
         title_initial,
         title_incrmnt,
         title_writers,
         title_readers,
-    };
-    data.render(&opt);
-    Ok(())
+    })
 }
 
 fn merge_toml(one: toml::Value, two: toml::Value) -> toml::Value {
@@ -438,23 +449,25 @@ fn merge_toml(one: toml::Value, two: toml::Value) -> toml::Value {
     }
 }
 
-fn parse_periodic_stats(lines: &[&str]) -> (String, usize, toml::Value) {
+fn parse_periodic_stats(msg: String) -> Option<(String, usize, toml::Value)> {
     // TODO: move this into lazy_static
-    let re1 = Regex::new(r"\[.*\] (.+) periodic-stats").unwrap();
-    let re2 = Regex::new(r"\[.*\] ").unwrap();
-    let cap = re1.captures_iter(&lines[0]).next().unwrap();
+    let re1 = Regex::new(r"\[.*\] (.+) periodic-stats.*").unwrap();
+    if !re1.is_match(&msg) {
+        return None;
+    }
+
+    let lines: Vec<&str> = msg.lines().collect();
+    let cap = re1.captures_iter(lines[0]).next().unwrap();
     let tp: Vec<String> = cap[1].split("-").map(|x| x.to_string()).collect();
-    let stat_lines: Vec<String> = lines[1..]
-        .iter()
-        .take_while(|l| !re2.is_match(l))
-        .map(|l| l.to_string())
-        .collect();
-    let s = stat_lines.join("\n");
-    let value: toml::Value = s.parse().expect("failed to parse stats");
+    let sstat = lines[1..].join("\n");
+    let value: toml::Value = sstat.parse().expect("failed to parse stats");
     match tp[0].as_str() {
-        "initial" => (tp[0].clone(), 0, value),
-        "incremental" => (tp[0].clone(), 0, value),
-        "reader" | "writer" => (tp[0].clone(), tp[1].parse().unwrap(), value),
+        "initial" => Some((tp[0].clone(), 0, value)),
+        "incremental" => Some((tp[0].clone(), 0, value)),
+        "reader" | "writer" => {
+            let thread = tp[1].parse().unwrap();
+            Some((tp[0].clone(), thread, value))
+        }
         _ => unreachable!(),
     }
 }
