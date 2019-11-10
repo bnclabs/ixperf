@@ -178,39 +178,51 @@ where
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
 {
     match p.rdms.index.as_str() {
-        "llrb" => {
-            let llrb_index = p.rdms_llrb.new(name);
-            let mut index = rdms::Rdms::new(name, llrb_index).unwrap();
-            if p.rdms.commit_interval > 0 {
-                let interval = Duration::from_secs(p.rdms.commit_interval);
-                index.set_commit_interval(interval);
-            }
-
-            let fstats = perf1::<K, V, Box<Llrb<K, V>>>(&mut index, &p);
-
-            let istats = index.validate().unwrap();
-            info!(target: "ixperf", "rdms llrb stats\n{}", istats);
-            validate_llrb::<K, V>(&istats, &fstats, &p);
-        }
-        "mvcc" => {
-            let mvcc_index = p.rdms_mvcc.new(name);
-            let mut index = rdms::Rdms::new(name, mvcc_index).unwrap();
-            if p.rdms.commit_interval > 0 {
-                let interval = Duration::from_secs(p.rdms.commit_interval);
-                index.set_commit_interval(interval);
-            }
-
-            let fstats = perf1::<K, V, Box<Mvcc<K, V>>>(&mut index, &p);
-
-            let istats = index.validate().unwrap();
-            info!(target: "ixperf", "rdms mvcc stats\n{}", istats);
-            validate_mvcc::<K, V>(&istats, &fstats, &p);
-        }
+        "llrb" => perf_llrb::<K, V>(name, p),
+        "mvcc" => perf_mvcc::<K, V>(name, p),
         name => panic!("unsupported index {}", name),
     }
 }
 
-fn perf1<K, V, I>(index: &mut rdms::Rdms<K, V, I>, p: &Profile) -> stats::Ops
+fn perf_llrb<K, V>(name: &str, p: Profile)
+where
+    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + fmt::Debug + RandomKV,
+    V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
+{
+    let llrb_index = p.rdms_llrb.new(name);
+    let mut index = rdms::Rdms::new(name, llrb_index).unwrap();
+    if p.rdms.commit_interval > 0 {
+        let interval = Duration::from_secs(p.rdms.commit_interval);
+        index.set_commit_interval(interval);
+    }
+
+    let fstats = do_perf::<K, V, Box<Llrb<K, V>>>(&mut index, &p);
+
+    let istats = index.validate().unwrap();
+    info!(target: "ixperf", "rdms llrb stats\n{}", istats);
+    validate_llrb::<K, V>(&istats, &fstats, &p);
+}
+
+fn perf_mvcc<K, V>(name: &str, p: Profile)
+where
+    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + fmt::Debug + RandomKV,
+    V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
+{
+    let mvcc_index = p.rdms_mvcc.new(name);
+    let mut index = rdms::Rdms::new(name, mvcc_index).unwrap();
+    if p.rdms.commit_interval > 0 {
+        let interval = Duration::from_secs(p.rdms.commit_interval);
+        index.set_commit_interval(interval);
+    }
+
+    let fstats = do_perf::<K, V, Box<Mvcc<K, V>>>(&mut index, &p);
+
+    let istats = index.validate().unwrap();
+    info!(target: "ixperf", "rdms mvcc stats\n{}", istats);
+    validate_mvcc::<K, V>(&istats, &fstats, &p);
+}
+
+fn do_perf<K, V, I>(index: &mut rdms::Rdms<K, V, I>, p: &Profile) -> stats::Ops
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
@@ -238,15 +250,17 @@ where
         fstats
     } else if (p.g.read_ops() + p.g.write_ops()) > 0 {
         let mut threads = vec![];
-        for i in 0..p.rdms.readers {
-            let r = index.to_reader().unwrap();
-            let pr = p.clone();
-            threads.push(thread::spawn(move || do_read(i, r, pr)));
-        }
+        let mut thread_id = 0;
         for i in 0..p.rdms.writers {
             let w = index.to_writer().unwrap();
             let pr = p.clone();
-            threads.push(thread::spawn(move || do_write(i, w, pr)));
+            threads.push(thread::spawn(move || do_write(thread_id + i, w, pr)));
+        }
+        thread_id += p.rdms.writers;
+        for i in 0..p.rdms.readers {
+            let r = index.to_reader().unwrap();
+            let pr = p.clone();
+            threads.push(thread::spawn(move || do_read(thread_id + i, r, pr)));
         }
         for t in threads {
             fstats.merge(&t.join().unwrap());

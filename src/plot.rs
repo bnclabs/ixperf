@@ -356,19 +356,25 @@ fn parse_log(opt: &Opt) -> Result<PlotData, String> {
     let mut readers: Vec<Vec<toml::Value>> = vec![];
 
     let merge_thread = |ts: &mut Vec<Vec<toml::Value>>| -> Option<toml::Value> {
+        let mut vs: Vec<toml::Value> = ts
+            .iter_mut()
+            .filter_map(|t| if t.len() > 0 { Some(t.remove(0)) } else { None })
+            .collect();
+        match vs.len() {
+            0 => None,
+            1 => Some(vs.remove(0)),
+            _ => Some(
+                vs[1..]
+                    .iter()
+                    .fold(vs[0].clone(), |a, v| merge_toml(a, v.clone())),
+            ),
+        }
+    };
+
+    let try_merge_thread = |ts: &mut Vec<Vec<toml::Value>>| -> Option<toml::Value> {
         match ts.iter().any(|t| t.len() == 0) {
             true => None,
-            false => {
-                let vs: Vec<toml::Value> = ts
-                    // something
-                    .iter_mut()
-                    .map(|t| t.remove(0))
-                    .collect();
-                let value = vs[1..]
-                    .iter()
-                    .fold(vs[0].clone(), |a, v| merge_toml(a, v.clone()));
-                Some(value)
-            }
+            false => merge_thread(ts),
         }
     };
 
@@ -411,13 +417,25 @@ fn parse_log(opt: &Opt) -> Result<PlotData, String> {
                 "incremental" => title_incrmnt.push(value),
                 title if &title[..6] == "writer" => {
                     writers[thread].push(value);
-                    merge_thread(&mut writers).map(|v| title_writers.push(v));
+                    try_merge_thread(&mut writers).map(|v| title_writers.push(v));
                 }
                 title if &title[..6] == "reader" => {
                     readers[thread].push(value);
-                    merge_thread(&mut readers).map(|v| title_readers.push(v));
+                    try_merge_thread(&mut readers).map(|v| title_readers.push(v));
                 }
                 _ => unreachable!(),
+            }
+        }
+        loop {
+            match merge_thread(&mut writers) {
+                None => break,
+                Some(v) => title_writers.push(v),
+            }
+        }
+        loop {
+            match merge_thread(&mut readers) {
+                None => break,
+                Some(v) => title_readers.push(v),
             }
         }
     }
