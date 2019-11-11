@@ -395,6 +395,7 @@ where
 pub trait RandomKV {
     fn gen_key(&self, rng: &mut SmallRng, g: &GenOptions) -> Self;
     fn gen_val(&self, rng: &mut SmallRng, g: &GenOptions) -> Self;
+    fn next(&self, g: &GenOptions) -> Self;
 }
 
 impl RandomKV for i32 {
@@ -406,6 +407,10 @@ impl RandomKV for i32 {
     fn gen_val(&self, rng: &mut SmallRng, _g: &GenOptions) -> i32 {
         i32::abs(rng.gen())
     }
+
+    fn next(&self, _g: &GenOptions) -> i32 {
+        *self + 1
+    }
 }
 
 impl RandomKV for i64 {
@@ -416,6 +421,10 @@ impl RandomKV for i64 {
 
     fn gen_val(&self, rng: &mut SmallRng, _g: &GenOptions) -> i64 {
         i64::abs(rng.gen())
+    }
+
+    fn next(&self, _g: &GenOptions) -> i64 {
+        *self + 1
     }
 }
 
@@ -433,6 +442,15 @@ impl RandomKV for [u8; 32] {
         let arr = [0xAB_u8; 32];
         arr
     }
+
+    fn next(&self, _g: &GenOptions) -> [u8; 32] {
+        let s = std::str::from_utf8(self).unwrap();
+        let n: i64 = s.parse().unwrap();
+        let mut arr = [0_u8; 32];
+        let src = format!("{:032}", n + 1).as_bytes().to_vec();
+        arr.copy_from_slice(&src);
+        arr
+    }
 }
 
 impl RandomKV for [u8; 20] {
@@ -447,6 +465,15 @@ impl RandomKV for [u8; 20] {
 
     fn gen_val(&self, _rng: &mut SmallRng, _g: &GenOptions) -> [u8; 20] {
         let arr = [0xAB_u8; 20];
+        arr
+    }
+
+    fn next(&self, _g: &GenOptions) -> [u8; 20] {
+        let s = std::str::from_utf8(self).unwrap();
+        let n: i64 = s.parse().unwrap();
+        let mut arr = [0_u8; 20];
+        let src = format!("{:020}", n + 1).as_bytes().to_vec();
+        arr.copy_from_slice(&src);
         arr
     }
 }
@@ -466,6 +493,46 @@ impl RandomKV for Vec<u8> {
         let mut value = Vec::with_capacity(g.val_size);
         value.resize(g.val_size, 0xAB_u8);
         value
+    }
+
+    fn next(&self, g: &GenOptions) -> Vec<u8> {
+        let s = std::str::from_utf8(self).unwrap();
+        let n: i64 = s.parse().unwrap();
+
+        let mut key = Vec::with_capacity(g.key_size);
+        key.resize(g.key_size, b'0');
+        let src = format!("{:0width$}", n + 1, width = g.key_size);
+        src.as_bytes().to_vec()
+    }
+}
+
+#[allow(dead_code)]
+pub struct IterKeys<K>
+where
+    K: 'static + Clone + Default + Send + Sync + RandomKV,
+{
+    from: K,
+    g: GenOptions,
+}
+
+impl<K> IterKeys<K>
+where
+    K: 'static + Clone + Default + Send + Sync + RandomKV,
+{
+    #[allow(dead_code)]
+    fn new(from: K, g: &GenOptions) -> IterKeys<K> {
+        IterKeys { from, g: g.clone() }
+    }
+}
+
+impl<K> Iterator for IterKeys<K>
+where
+    K: 'static + Clone + Default + Send + Sync + RandomKV,
+{
+    type Item = K;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        Some(self.from.next(&self.g))
     }
 }
 

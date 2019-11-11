@@ -344,27 +344,28 @@ where
     p.g.reset_writes();
 
     // load initial data.
-    let mut mem_index = if p.rdms_robt.delta_ok {
-        Llrb::new_lsm("load-robt")
-    } else {
-        Llrb::new("load-rbt")
-    };
     let mut lstats = stats::Ops::new();
-    let gen = InitialLoad::<K, V>::new(p.g.clone());
-    let mut w = mem_index.to_writer().unwrap();
-    for (_i, cmd) in gen.enumerate() {
-        match cmd {
-            Cmd::Load { key, value } => {
-                lstats.load.sample_start(false);
-                let items = w.set(key, value).unwrap().map_or(0, |_| 1);
-                lstats.load.sample_end(items);
-            }
-            _ => unreachable!(),
+    for _ in 0..1 {
+        let mut mem_index = if p.rdms_robt.delta_ok {
+            Llrb::new_lsm("load-robt")
+        } else {
+            Llrb::new("load-rbt")
         };
+        let gen = InitialLoad::<K, V>::new(p.g.clone());
+        let mut w = mem_index.to_writer().unwrap();
+        for (_i, cmd) in gen.enumerate() {
+            match cmd {
+                Cmd::Load { key, value } => {
+                    lstats.load.sample_start(false);
+                    let items = w.set(key, value).unwrap().map_or(0, |_| 1);
+                    lstats.load.sample_end(items);
+                }
+                _ => unreachable!(),
+            };
+        }
+        index.commit(mem_index.iter().unwrap(), vec![]).unwrap();
     }
     info!(target: "ixperf", "robt load initial stats\n{:?}\n", lstats);
-
-    index.commit(mem_index.iter().unwrap(), vec![]).unwrap();
 
     // optional iteration
     let (start, mut iter_count) = (SystemTime::now(), 0);
@@ -425,17 +426,15 @@ where
         fstats
     } else if (p.g.read_ops() + p.g.write_ops()) > 0 {
         let mut threads = vec![];
-        let mut thread_id = 0;
         for i in 0..p.rdms.writers {
             let w = index.to_writer().unwrap();
             let pr = p.clone();
-            threads.push(thread::spawn(move || do_write(thread_id + i, w, pr)));
+            threads.push(thread::spawn(move || do_write(i, w, pr)));
         }
-        thread_id += p.rdms.writers;
         for i in 0..p.rdms.readers {
             let r = index.to_reader().unwrap();
             let pr = p.clone();
-            threads.push(thread::spawn(move || do_read(thread_id + i, r, pr)));
+            threads.push(thread::spawn(move || do_read(i, r, pr)));
         }
         for t in threads {
             fstats.merge(&t.join().unwrap());
