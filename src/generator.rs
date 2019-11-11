@@ -29,6 +29,11 @@ pub struct GenOptions {
 }
 
 impl GenOptions {
+    pub fn reset_writes(&mut self) {
+        self.sets = 0;
+        self.deletes = 0;
+    }
+
     pub fn read_ops(&self) -> usize {
         self.gets + self.ranges + self.reverses
     }

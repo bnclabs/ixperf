@@ -43,6 +43,7 @@ iters = true
 channel_size = 100_000
 
 [rdms]
+name = "rdms-ixperf"
 index = "mvcc"
 commit_interval = 0 # in seconds.
 readers = 4
@@ -63,3 +64,13 @@ lsm = false
 sticky = false
 # spin while waiting for lock
 spin = true
+
+[rdms-robt]
+dir = "./"
+z_blocksize = 4096
+m_blocksize = 4096
+v_blocksize = 4096
+delta_ok = true
+vlog_file = ""
+value_in_vlog = true
+flush_queue_size = 64

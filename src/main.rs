@@ -138,7 +138,7 @@ fn main() {
 
     let res = match p.index.as_str() {
         "llrb-index" => mod_llrb::do_llrb_index("ixperf", p),
-        "rdms" => mod_rdms::do_rdms_index("ixperf", p),
+        "rdms" => mod_rdms::do_rdms_index(p),
         //"rdms-mvcc" => do_rdms_mvcc(p),
         //"rdms-robt" => do_rdms_robt(p),
         _ => Err(format!("unsupported index-type {}", p.index)),
@@ -198,6 +198,7 @@ pub struct Profile {
     pub rdms: mod_rdms::RdmsOpt,
     pub rdms_llrb: mod_rdms::LlrbOpt,
     pub rdms_mvcc: mod_rdms::MvccOpt,
+    pub rdms_robt: mod_rdms::RobtOpt,
 }
 
 impl TryFrom<toml::Value> for Profile {
@@ -221,6 +222,9 @@ impl TryFrom<toml::Value> for Profile {
             .ok()
             .unwrap_or(Default::default());
         p.rdms_mvcc = TryFrom::try_from(value.clone())
+            .ok()
+            .unwrap_or(Default::default());
+        p.rdms_robt = TryFrom::try_from(value.clone())
             .ok()
             .unwrap_or(Default::default());
         Ok(p)

@@ -2,14 +2,15 @@ use log::info;
 use rand::{rngs::SmallRng, SeedableRng};
 use rdms::{
     self,
+    core::{Diff, DiskIndexFactory, Footprint, Index, Reader, Serialize, Validate, Writer},
     llrb::{Llrb, Stats as LlrbStats},
     mvcc::{Mvcc, Stats as MvccStats},
-    Diff, Footprint, Index, Reader, Validate, Writer,
+    robt::{self, Robt},
 };
 
 use std::{
     convert::{TryFrom, TryInto},
-    fmt, thread,
+    ffi, fmt, thread,
     time::{Duration, SystemTime},
 };
 
@@ -50,8 +51,8 @@ impl TryFrom<toml::Value> for LlrbOpt {
 impl LlrbOpt {
     fn new<K, V>(&self, name: &str) -> Box<Llrb<K, V>>
     where
-        K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
-        V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
+        K: Clone + Ord,
+        V: Clone + Diff,
     {
         let mut index = if self.lsm {
             Llrb::new_lsm(name)
@@ -95,8 +96,8 @@ impl TryFrom<toml::Value> for MvccOpt {
 impl MvccOpt {
     fn new<K, V>(&self, name: &str) -> Box<Mvcc<K, V>>
     where
-        K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
-        V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
+        K: Clone + Ord,
+        V: Clone + Diff,
     {
         let mut index = if self.lsm {
             Mvcc::new_lsm(name)
@@ -109,16 +110,108 @@ impl MvccOpt {
 }
 
 #[derive(Default, Clone)]
+pub struct RobtOpt {
+    dir: ffi::OsString,
+    z_blocksize: usize,
+    m_blocksize: usize,
+    v_blocksize: usize,
+    delta_ok: bool,
+    vlog_file: Option<ffi::OsString>,
+    value_in_vlog: bool,
+    flush_queue_size: usize,
+}
+
+impl TryFrom<toml::Value> for RobtOpt {
+    type Error = String;
+
+    fn try_from(value: toml::Value) -> Result<Self, Self::Error> {
+        let mut robt_opt: RobtOpt = Default::default();
+
+        let section = match &value.get("rdms-robt") {
+            None => return Err("not found".to_string()),
+            Some(section) => section.clone(),
+        };
+        for (name, value) in section.as_table().unwrap().iter() {
+            match name.as_str() {
+                "dir" => {
+                    let dir: &ffi::OsStr = value.as_str().unwrap().as_ref();
+                    robt_opt.dir = dir.to_os_string();
+                }
+                "z_blocksize" => {
+                    robt_opt.z_blocksize = value.as_integer().unwrap().try_into().unwrap()
+                }
+                "m_blocksize" => {
+                    robt_opt.m_blocksize = value.as_integer().unwrap().try_into().unwrap()
+                }
+                "v_blocksize" => {
+                    robt_opt.v_blocksize = value.as_integer().unwrap().try_into().unwrap()
+                }
+                "delta_ok" => robt_opt.delta_ok = value.as_bool().unwrap(),
+                "vlog_file" if value.as_str().unwrap() == "" => robt_opt.vlog_file = None,
+                "vlog_file" => {
+                    let vlog_file: &ffi::OsStr = value.as_str().unwrap().as_ref();
+                    robt_opt.vlog_file = Some(vlog_file.to_os_string());
+                }
+                "value_in_vlog" => robt_opt.value_in_vlog = value.as_bool().unwrap(),
+                "flush_queue_size" => {
+                    robt_opt.flush_queue_size = value.as_integer().unwrap().try_into().unwrap()
+                }
+                _ => panic!("invalid profile parameter {}", name),
+            }
+        }
+
+        Ok(robt_opt)
+    }
+}
+
+impl RobtOpt {
+    fn new<K, V>(&self, name: &str) -> Robt<K, V>
+    where
+        K: Clone + Ord + Footprint + Serialize,
+        V: Clone + Diff + Footprint + Serialize,
+        <V as Diff>::D: Serialize,
+    {
+        let mut config: robt::Config = Default::default();
+        config.set_blocksize(self.z_blocksize, self.m_blocksize, self.v_blocksize);
+        if self.delta_ok {
+            config.set_delta(self.vlog_file.clone());
+        }
+        config
+            .set_value_log(self.vlog_file.clone(), self.value_in_vlog)
+            .set_flush_queue_size(self.flush_queue_size);
+
+        robt::robt_factory(config).new(&self.dir, name).unwrap()
+    }
+}
+
+#[derive(Default, Clone)]
 pub struct RdmsOpt {
     index: String,
+    name: String,
     commit_interval: u64,
     readers: usize,
     writers: usize,
 }
 
 impl RdmsOpt {
+    fn reset_writes(&mut self) {
+        self.writers = 0;
+    }
+
     fn threads(&self) -> usize {
         self.readers + self.writers
+    }
+
+    fn configure<K, V, I>(&self, index: &mut rdms::Rdms<K, V, I>)
+    where
+        K: Clone + Ord + Footprint,
+        V: Clone + Diff + Footprint,
+        I: Index<K, V>,
+    {
+        if self.commit_interval > 0 {
+            let interval = Duration::from_secs(self.commit_interval);
+            index.set_commit_interval(interval);
+        }
     }
 }
 
@@ -134,6 +227,7 @@ impl TryFrom<toml::Value> for RdmsOpt {
         };
         for (name, value) in section.as_table().unwrap().iter() {
             match name.as_str() {
+                "name" => rdms_opt.name = value.as_str().unwrap().to_string(),
                 "index" => rdms_opt.index = value.as_str().unwrap().to_string(),
                 "commit_interval" => {
                     let v = value.as_integer().unwrap();
@@ -154,17 +248,18 @@ impl TryFrom<toml::Value> for RdmsOpt {
     }
 }
 
-pub fn do_rdms_index(name: &str, p: Profile) -> Result<(), String> {
+pub fn do_rdms_index(p: Profile) -> Result<(), String> {
+    let name = p.rdms.name.clone();
     match (p.key_type.as_str(), p.val_type.as_str()) {
-        ("i32", "i32") => Ok(perf::<i32, i32>(name, p)),
-        ("i32", "array") => Ok(perf::<i32, [u8; 20]>(name, p)),
-        ("i32", "bytes") => Ok(perf::<i32, Vec<u8>>(name, p)),
-        ("i64", "i64") => Ok(perf::<i64, i64>(name, p)),
-        ("i64", "array") => Ok(perf::<i64, [u8; 20]>(name, p)),
-        ("i64", "bytes") => Ok(perf::<i64, Vec<u8>>(name, p)),
-        ("array", "array") => Ok(perf::<[u8; 20], [u8; 20]>(name, p)),
-        ("array", "bytes") => Ok(perf::<[u8; 20], Vec<u8>>(name, p)),
-        ("bytes", "bytes") => Ok(perf::<Vec<u8>, Vec<u8>>(name, p)),
+        ("i32", "i32") => Ok(perf::<i32, i32>(&name, p)),
+        ("i32", "array") => Ok(perf::<i32, [u8; 20]>(&name, p)),
+        ("i32", "bytes") => Ok(perf::<i32, Vec<u8>>(&name, p)),
+        ("i64", "i64") => Ok(perf::<i64, i64>(&name, p)),
+        ("i64", "array") => Ok(perf::<i64, [u8; 20]>(&name, p)),
+        ("i64", "bytes") => Ok(perf::<i64, Vec<u8>>(&name, p)),
+        ("array", "array") => Ok(perf::<[u8; 20], [u8; 20]>(&name, p)),
+        ("array", "bytes") => Ok(perf::<[u8; 20], Vec<u8>>(&name, p)),
+        ("bytes", "bytes") => Ok(perf::<Vec<u8>, Vec<u8>>(&name, p)),
         _ => Err(format!(
             "unsupported key/value types {}/{}",
             p.key_type, p.val_type
@@ -174,12 +269,23 @@ pub fn do_rdms_index(name: &str, p: Profile) -> Result<(), String> {
 
 fn perf<K, V>(name: &str, p: Profile)
 where
-    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + fmt::Debug + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
+    K: 'static
+        + Clone
+        + Default
+        + Send
+        + Sync
+        + Ord
+        + Footprint
+        + Serialize
+        + fmt::Debug
+        + RandomKV,
+    V: 'static + Clone + Default + Send + Sync + Diff + Footprint + Serialize + RandomKV,
+    <V as Diff>::D: Serialize,
 {
     match p.rdms.index.as_str() {
         "llrb" => perf_llrb::<K, V>(name, p),
         "mvcc" => perf_mvcc::<K, V>(name, p),
+        "robt" => perf_robt::<K, V>(name, p),
         name => panic!("unsupported index {}", name),
     }
 }
@@ -191,10 +297,7 @@ where
 {
     let llrb_index = p.rdms_llrb.new(name);
     let mut index = rdms::Rdms::new(name, llrb_index).unwrap();
-    if p.rdms.commit_interval > 0 {
-        let interval = Duration::from_secs(p.rdms.commit_interval);
-        index.set_commit_interval(interval);
-    }
+    p.rdms.configure(&mut index);
 
     let fstats = do_perf::<K, V, Box<Llrb<K, V>>>(&mut index, &p);
 
@@ -210,16 +313,88 @@ where
 {
     let mvcc_index = p.rdms_mvcc.new(name);
     let mut index = rdms::Rdms::new(name, mvcc_index).unwrap();
-    if p.rdms.commit_interval > 0 {
-        let interval = Duration::from_secs(p.rdms.commit_interval);
-        index.set_commit_interval(interval);
-    }
+    p.rdms.configure(&mut index);
 
     let fstats = do_perf::<K, V, Box<Mvcc<K, V>>>(&mut index, &p);
 
     let istats = index.validate().unwrap();
     info!(target: "ixperf", "rdms mvcc stats\n{}", istats);
     validate_mvcc::<K, V>(&istats, &fstats, &p);
+}
+
+fn perf_robt<K, V>(name: &str, mut p: Profile)
+where
+    K: 'static
+        + Clone
+        + Default
+        + Send
+        + Sync
+        + Ord
+        + Footprint
+        + Serialize
+        + fmt::Debug
+        + RandomKV,
+    V: 'static + Clone + Default + Send + Sync + Diff + Footprint + Serialize + RandomKV,
+    <V as Diff>::D: Serialize,
+{
+    let robt_index = p.rdms_robt.new(name);
+    let mut index = rdms::Rdms::new(name, robt_index).unwrap();
+    p.rdms.configure(&mut index);
+    p.rdms.reset_writes();
+    p.g.reset_writes();
+
+    // load initial data.
+    let mut mem_index = if p.rdms_robt.delta_ok {
+        Llrb::new_lsm("load-robt")
+    } else {
+        Llrb::new("load-rbt")
+    };
+    let mut lstats = stats::Ops::new();
+    let gen = InitialLoad::<K, V>::new(p.g.clone());
+    let mut w = mem_index.to_writer().unwrap();
+    for (_i, cmd) in gen.enumerate() {
+        match cmd {
+            Cmd::Load { key, value } => {
+                lstats.load.sample_start(false);
+                let items = w.set(key, value).unwrap().map_or(0, |_| 1);
+                lstats.load.sample_end(items);
+            }
+            _ => unreachable!(),
+        };
+    }
+    info!(target: "ixperf", "robt load initial stats\n{:?}\n", lstats);
+
+    index.commit(mem_index.iter().unwrap(), vec![]).unwrap();
+
+    // optional iteration
+    let (start, mut iter_count) = (SystemTime::now(), 0);
+    if p.g.iters {
+        let mut r = index.to_reader().unwrap();
+        for _ in r.iter().unwrap() {
+            iter_count += 1
+        }
+    }
+    let idur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
+
+    // concurrent readers
+    let mut fstats = stats::Ops::new();
+    let mut threads = vec![];
+    for i in 0..p.rdms.readers {
+        let r = index.to_reader().unwrap();
+        let pr = p.clone();
+        threads.push(thread::spawn(move || do_read(i, r, pr)));
+    }
+    for t in threads {
+        fstats.merge(&t.join().unwrap());
+    }
+
+    if p.g.iters {
+        info!(
+            target: "ixperf",
+            "rdms took {:?} to iter over {} items", idur, iter_count
+        );
+    }
+    info!(target: "ixperf", "concurrent stats\n{:?}", fstats);
 }
 
 fn do_perf<K, V, I>(index: &mut rdms::Rdms<K, V, I>, p: &Profile) -> stats::Ops
@@ -276,6 +451,7 @@ where
             "rdms took {:?} to iter over {} items", idur, iter_count
         );
     }
+    info!(target: "ixperf", "concurrent stats\n{:?}", fstats);
     fstats
 }
 
@@ -480,8 +656,8 @@ where
 
 fn validate_llrb<K, V>(stats: &LlrbStats, fstats: &stats::Ops, p: &Profile)
 where
-    K: Clone + Default + Ord + Footprint + fmt::Debug + RandomKV,
-    V: Clone + Default + Diff + Footprint + RandomKV,
+    K: Clone + Ord + Default + Footprint + fmt::Debug + RandomKV,
+    V: Clone + Diff + Default + Footprint + RandomKV,
 {
     if p.rdms_llrb.lsm || p.rdms_llrb.sticky {
         let expected_entries = (fstats.load.count - fstats.load.items)
@@ -525,8 +701,8 @@ where
 
 fn validate_mvcc<K, V>(stats: &MvccStats, fstats: &stats::Ops, p: &Profile)
 where
-    K: Clone + Default + Ord + Footprint + fmt::Debug + RandomKV,
-    V: Clone + Default + Diff + Footprint + RandomKV,
+    K: Clone + Ord + Default + Footprint + fmt::Debug + RandomKV,
+    V: Clone + Diff + Default + Footprint + RandomKV,
 {
     if p.rdms_mvcc.lsm || p.rdms_mvcc.sticky {
         let expected_entries = (fstats.load.count - fstats.load.items)
