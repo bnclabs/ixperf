@@ -6,3 +6,4 @@ Cargo.lock
 .vimsession
 ixperf.log
 plot/**
+data/**
