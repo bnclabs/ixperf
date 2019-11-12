@@ -1,5 +1,5 @@
 use log::info;
-use rand::{rngs::SmallRng, SeedableRng};
+use rand::{rngs::SmallRng, Rng, SeedableRng};
 use rdms::{
     self,
     core::{Diff, DiskIndexFactory, Footprint, Index, Reader, Serialize, Validate, Writer},
@@ -173,9 +173,7 @@ impl RobtOpt {
     {
         let mut config: robt::Config = Default::default();
         config.set_blocksize(self.z_blocksize, self.m_blocksize, self.v_blocksize);
-        if self.delta_ok {
-            config.set_delta(self.vlog_file.clone());
-        }
+        config.set_delta(self.vlog_file.clone(), self.delta_ok);
         config
             .set_value_log(self.vlog_file.clone(), self.value_in_vlog)
             .set_flush_queue_size(self.flush_queue_size);
@@ -194,10 +192,6 @@ pub struct RdmsOpt {
 }
 
 impl RdmsOpt {
-    fn reset_writes(&mut self) {
-        self.writers = 0;
-    }
-
     fn threads(&self) -> usize {
         self.readers + self.writers
     }
@@ -322,7 +316,7 @@ where
     validate_mvcc::<K, V>(&istats, &fstats, &p);
 }
 
-fn perf_robt<K, V>(name: &str, mut p: Profile)
+fn perf_robt<K, V>(name: &str, p: Profile)
 where
     K: 'static
         + Clone
@@ -340,32 +334,39 @@ where
     let robt_index = p.rdms_robt.new(name);
     let mut index = rdms::Rdms::new(name, robt_index).unwrap();
     p.rdms.configure(&mut index);
-    p.rdms.reset_writes();
-    p.g.reset_writes();
 
     // load initial data.
+    let mut fstats = stats::Ops::new();
     let mut lstats = stats::Ops::new();
-    for _ in 0..1 {
+    let mut rng = SmallRng::from_seed(p.g.seed.to_le_bytes());
+    for _ in 0..(p.g.loads / p.g.write_ops()) {
         let mut mem_index = if p.rdms_robt.delta_ok {
             Llrb::new_lsm("load-robt")
         } else {
             Llrb::new("load-rbt")
         };
-        let gen = InitialLoad::<K, V>::new(p.g.clone());
+        mem_index.set_sticky(rng.gen::<bool>());
+        let gen = IncrementalLoad::<K, V>::new(p.g.clone());
         let mut w = mem_index.to_writer().unwrap();
         for (_i, cmd) in gen.enumerate() {
             match cmd {
-                Cmd::Load { key, value } => {
-                    lstats.load.sample_start(false);
-                    let items = w.set(key, value).unwrap().map_or(0, |_| 1);
-                    lstats.load.sample_end(items);
+                Cmd::Set { key, value } => {
+                    lstats.set.sample_start(false);
+                    let n = w.set(key, value.clone()).unwrap().map_or(0, |_| 1);
+                    lstats.set.sample_end(n);
+                }
+                Cmd::Delete { key } => {
+                    lstats.delete.sample_start(false);
+                    let items = w.delete(&key).unwrap().map_or(1, |_| 0);
+                    lstats.delete.sample_end(items);
                 }
                 _ => unreachable!(),
             };
         }
         index.commit(mem_index.iter().unwrap(), vec![]).unwrap();
+        fstats.merge(&lstats);
     }
-    info!(target: "ixperf", "robt load initial stats\n{:?}\n", lstats);
+    info!(target: "ixperf", "robt load stats\n{:?}\n", fstats);
 
     // optional iteration
     let (start, mut iter_count) = (SystemTime::now(), 0);
