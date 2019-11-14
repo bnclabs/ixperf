@@ -318,7 +318,7 @@ where
     validate_mvcc::<K, V>(&istats, &fstats, &p);
 }
 
-fn perf_robt<K, V>(name: &str, p: Profile)
+fn perf_robt<K, V>(name: &str, mut p: Profile)
 where
     K: 'static
         + Clone
@@ -341,13 +341,16 @@ where
     let mut fstats = stats::Ops::new();
     let mut lstats = stats::Ops::new();
     let mut rng = SmallRng::from_seed(p.g.seed.to_le_bytes());
-    for _ in 0..(p.g.loads / p.g.write_ops()) {
+    let mut seqno = 0;
+    for i in 0..(p.g.loads / p.g.write_ops()) {
         let mut mem_index = if p.rdms_robt.delta_ok {
             Llrb::new_lsm("load-robt")
         } else {
             Llrb::new("load-rbt")
         };
         mem_index.set_sticky(rng.gen::<bool>());
+        mem_index.set_seqno(seqno);
+        p.g.seed += i as u128;
         let gen = IncrementalLoad::<K, V>::new(p.g.clone());
         let mut w = mem_index.to_writer().unwrap();
         for (_i, cmd) in gen.enumerate() {
@@ -365,6 +368,7 @@ where
                 _ => unreachable!(),
             };
         }
+        seqno = mem_index.to_seqno();
         index.commit(mem_index.iter().unwrap(), vec![]).unwrap();
         fstats.merge(&lstats);
     }

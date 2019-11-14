@@ -19,10 +19,10 @@ value_size = 400
 seed = 0
 
 # Total number of initial load operations.
-loads = 200_000
+loads = 20_000_000
 
 # Total number of incremental set operations.
-sets = 100_000
+sets = 1_000_000
 
 # Total number of incremental delete operations.
 deletes = 0
