@@ -10,7 +10,9 @@ use rdms::{
 
 use std::{
     convert::{TryFrom, TryInto},
-    ffi, fmt, thread,
+    ffi, fmt,
+    ops::Bound,
+    thread,
     time::{Duration, SystemTime},
 };
 
@@ -366,7 +368,8 @@ where
         index.commit(mem_index.iter().unwrap(), vec![]).unwrap();
         fstats.merge(&lstats);
     }
-    info!(target: "ixperf", "robt load stats\n{:?}\n", fstats);
+
+    index.compact(Bound::Excluded(0)).unwrap();
 
     // optional iteration
     let (start, mut iter_count) = (SystemTime::now(), 0);

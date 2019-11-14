@@ -165,10 +165,6 @@ impl fmt::Debug for Latency {
             Duration::from_nanos(self.to_mean() as u64),
             Duration::from_nanos(self.max as u64)
         )?;
-        write!(
-            f,
-            "{}.latency.percentiles = {{ {} }}\n",
-            self.name, latencies
-        )
+        write!(f, "{}.latency.percentiles = {{ {} }}", self.name, latencies)
     }
 }

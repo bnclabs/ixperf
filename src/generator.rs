@@ -188,7 +188,7 @@ where
     let elapsed = start.elapsed().unwrap();
     info!(
         target: "genrtr",
-        "incremental_read: {:10} reads in {:?}", total, elapsed
+        "incremental_read: {:10} ops in {:?}", total, elapsed
     );
 }
 
@@ -255,7 +255,7 @@ where
     let elapsed = start.elapsed().unwrap();
     info!(
         target: "genrtr",
-        "incremental_write: {:10} reads in {:?}", total, elapsed
+        "incremental_write: {:10} ops in {:?}", total, elapsed
     );
 }
 
@@ -331,7 +331,7 @@ where
     let elapsed = start.elapsed().unwrap();
     info!(
         target: "genrtr",
-        "incremental_load: {:10} reads in {:?}", total, elapsed
+        "incremental_load: {:10} ops in {:?}", total, elapsed
     );
 }
 
