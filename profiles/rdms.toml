@@ -19,16 +19,16 @@ value_size = 400
 seed = 0
 
 # Total number of initial load operations.
-loads = 1_000_000
+loads = 2_000_000
 
 # Total number of incremental set operations.
-sets = 100_000
+sets = 2_000_000
 
 # Total number of incremental delete operations.
-deletes = 100_000
+deletes = 0
 
 # Total number of get operations.
-gets = 0
+gets = 6_000_000
 
 # Total number of range iterations between a lower bound and upper bound.
 ranges = 0
@@ -44,10 +44,10 @@ channel_size = 100_000
 
 [rdms]
 name = "rdms-ixperf"
-index = "robt"
+index = "mvcc"
 commit_interval = 0 # in seconds.
-readers = 0
-writers = 0
+readers = 4
+writers = 1
 
 [rdms-llrb]
 # create llrb with log-structured-merge.
