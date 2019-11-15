@@ -351,7 +351,7 @@ where
         mem_index.set_sticky(rng.gen::<bool>());
         mem_index.set_seqno(seqno);
         p.g.seed += i as u128;
-        let gen = IncrementalLoad::<K, V>::new(p.g.clone());
+        let gen = IncrementalWrite::<K, V>::new(p.g.clone());
         let mut w = mem_index.to_writer().unwrap();
         for (_i, cmd) in gen.enumerate() {
             match cmd {
