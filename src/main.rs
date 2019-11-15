@@ -3,6 +3,7 @@
 
 mod generator;
 mod latency;
+mod mod_btree_map;
 mod mod_llrb;
 mod mod_rdms;
 mod plot;
@@ -138,6 +139,7 @@ fn main() {
 
     let res = match p.index.as_str() {
         "llrb-index" => mod_llrb::do_llrb_index("ixperf", p),
+        "btree-map" => mod_btree_map::do_btree_map("ixperf", p),
         "rdms" => mod_rdms::do_rdms_index(p),
         //"rdms-mvcc" => do_rdms_mvcc(p),
         //"rdms-robt" => do_rdms_robt(p),
