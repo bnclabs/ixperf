@@ -248,6 +248,7 @@ pub fn do_rdms_index(p: Profile) -> Result<(), String> {
     let name = p.rdms.name.clone();
     match (p.key_type.as_str(), p.val_type.as_str()) {
         ("i32", "i32") => Ok(perf::<i32, i32>(&name, p)),
+        ("i32", "i64") => Ok(perf::<i32, i64>(&name, p)),
         ("i32", "array") => Ok(perf::<i32, [u8; 20]>(&name, p)),
         ("i32", "bytes") => Ok(perf::<i32, Vec<u8>>(&name, p)),
         ("i64", "i64") => Ok(perf::<i64, i64>(&name, p)),
