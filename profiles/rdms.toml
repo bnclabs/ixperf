@@ -22,10 +22,10 @@ seed = 0
 loads = 10_000_000
 
 # Total number of incremental set operations.
-sets = 5_000_000
+sets = 4_000_000
 
 # Total number of incremental delete operations.
-deletes = 0
+deletes = 1_000_000
 
 # Total number of get operations.
 gets = 10_000_000

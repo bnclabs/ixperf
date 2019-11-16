@@ -5,7 +5,7 @@ use rdms::{
     core::{Diff, DiskIndexFactory, Footprint, Index, Reader, Serialize, Validate, Writer},
     llrb::{Llrb, Stats as LlrbStats},
     mvcc::{Mvcc, Stats as MvccStats},
-    robt::{self, Robt},
+    robt::{self, Robt, Stats as RobtStats},
 };
 
 use std::{
@@ -376,10 +376,13 @@ where
 
     index.compact(Bound::Excluded(0)).unwrap();
 
+    // validate
+    let mut r = index.to_reader().unwrap();
+    validate_robt::<K, V>(&mut r, &fstats, &p);
+
     // optional iteration
     let (start, mut iter_count) = (SystemTime::now(), 0);
     if p.g.iters {
-        let mut r = index.to_reader().unwrap();
         for _ in r.iter().unwrap() {
             iter_count += 1
         }
@@ -755,4 +758,25 @@ where
         tree_footprint -= (vfp * stats.n_deleted) as isize; // for sticky mode.
         assert_eq!(stats.tree_footprint, tree_footprint);
     }
+}
+
+fn validate_robt<K, V>(r: &mut robt::Snapshot<K, V>, _fstats: &stats::Ops, _p: &Profile)
+where
+    K: Clone + Ord + Default + Footprint + Serialize + fmt::Debug + RandomKV,
+    V: Clone + Diff + Default + Footprint + Serialize + RandomKV,
+    <V as Diff>::D: Clone + Serialize,
+{
+    let stats: RobtStats = r.validate().unwrap();
+    info!(target: "ixperf", "validating robt index ...");
+
+    let footprint: isize = (stats.m_bytes + stats.z_bytes + stats.v_bytes + stats.n_abytes)
+        .try_into()
+        .unwrap();
+    assert_eq!(footprint + 4096, r.footprint().unwrap());
+
+    let useful: isize =
+        (stats.key_mem + stats.val_mem + stats.diff_mem + stats.n_abytes + stats.padding)
+            .try_into()
+            .unwrap();
+    assert!(useful < footprint)
 }
