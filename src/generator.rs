@@ -251,7 +251,7 @@ where
         total = sets + dels;
     }
 
-    let total = g.gets + g.ranges + g.reverses;
+    let total = g.sets + g.deletes;
     let elapsed = start.elapsed().unwrap();
     info!(
         target: "genrtr",
