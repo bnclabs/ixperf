@@ -58,4 +58,4 @@ delta_ok = false
 vlog_file = ""
 value_in_vlog = true
 flush_queue_size = 64
-
+mmap = true

@@ -121,6 +121,7 @@ pub struct RobtOpt {
     vlog_file: Option<ffi::OsString>,
     value_in_vlog: bool,
     flush_queue_size: usize,
+    mmap: bool,
 }
 
 impl TryFrom<toml::Value> for RobtOpt {
@@ -158,6 +159,7 @@ impl TryFrom<toml::Value> for RobtOpt {
                 "flush_queue_size" => {
                     robt_opt.flush_queue_size = value.as_integer().unwrap().try_into().unwrap()
                 }
+                "mmap" => robt_opt.mmap = value.as_bool().unwrap(),
                 _ => panic!("invalid profile parameter {}", name),
             }
         }
@@ -370,11 +372,11 @@ where
             };
         }
         seqno = mem_index.to_seqno();
-        index.commit(mem_index.iter().unwrap(), vec![]).unwrap();
+        index.commit(mem_index.iter().unwrap(), |_| vec![]).unwrap();
         fstats.merge(&lstats);
     }
 
-    index.compact(Bound::Excluded(0)).unwrap();
+    index.compact(Bound::Excluded(0), |_| vec![]).unwrap();
 
     // validate
     let mut r = index.to_reader().unwrap();
@@ -393,7 +395,8 @@ where
     let mut fstats = stats::Ops::new();
     let mut threads = vec![];
     for i in 0..p.rdms.readers {
-        let r = index.to_reader().unwrap();
+        let mut r = index.to_reader().unwrap();
+        r.set_mmap(p.rdms_robt.mmap).unwrap();
         let pr = p.clone();
         threads.push(thread::spawn(move || do_read(i, r, pr)));
     }

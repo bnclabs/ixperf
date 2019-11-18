@@ -19,16 +19,16 @@ value_size = 400
 seed = 0
 
 # Total number of initial load operations.
-loads = 10_000_000
+loads = 20_000
 
 # Total number of incremental set operations.
-sets = 4_000_000
+sets = 10_000
 
 # Total number of incremental delete operations.
-deletes = 1_000_000
+deletes = 0
 
 # Total number of get operations.
-gets = 10_000_000
+gets = 100_000
 
 # Total number of range iterations between a lower bound and upper bound.
 ranges = 0
@@ -46,7 +46,7 @@ channel_size = 100_000
 name = "rdms-ixperf"
 index = "robt"
 commit_interval = 0 # in seconds.
-readers = 4
+readers = 1
 writers = 0
 
 [rdms-llrb]
@@ -74,3 +74,4 @@ delta_ok = true
 vlog_file = ""
 value_in_vlog = true
 flush_queue_size = 64
+mmap = true
