@@ -772,11 +772,6 @@ where
     let stats: RobtStats = r.validate().unwrap();
     info!(target: "ixperf", "validating robt index ...");
 
-    let footprint: isize = (stats.m_bytes + stats.z_bytes + stats.v_bytes + stats.n_abytes)
-        .try_into()
-        .unwrap();
-    assert_eq!(footprint + 4096, r.footprint().unwrap());
-
     let useful: isize =
         (stats.key_mem + stats.val_mem + stats.diff_mem + stats.n_abytes + stats.padding)
             .try_into()
