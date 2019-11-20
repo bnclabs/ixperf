@@ -5,6 +5,7 @@ use rdms::{
     core::{Diff, DiskIndexFactory, Footprint, Index, Reader, Serialize, Validate, Writer},
     llrb::{Llrb, Stats as LlrbStats},
     mvcc::{Mvcc, Stats as MvccStats},
+    nobitmap::NoBitmap,
     robt::{self, Robt, Stats as RobtStats},
 };
 
@@ -169,7 +170,7 @@ impl TryFrom<toml::Value> for RobtOpt {
 }
 
 impl RobtOpt {
-    fn new<K, V>(&self, name: &str) -> Robt<K, V>
+    fn new<K, V>(&self, name: &str) -> Robt<K, V, NoBitmap>
     where
         K: Clone + Ord + Footprint + Serialize,
         V: Clone + Diff + Footprint + Serialize,
@@ -763,7 +764,7 @@ where
     }
 }
 
-fn validate_robt<K, V>(r: &mut robt::Snapshot<K, V>, _fstats: &stats::Ops, _p: &Profile)
+fn validate_robt<K, V>(r: &mut robt::Snapshot<K, V, NoBitmap>, _fstats: &stats::Ops, _p: &Profile)
 where
     K: Clone + Ord + Default + Footprint + Serialize + fmt::Debug + RandomKV,
     V: Clone + Diff + Default + Footprint + Serialize + RandomKV,
@@ -772,6 +773,9 @@ where
     let stats: RobtStats = r.validate().unwrap();
     info!(target: "ixperf", "validating robt index ...");
 
+    let footprint: isize = (stats.m_bytes + stats.z_bytes + stats.v_bytes + stats.n_abytes)
+        .try_into()
+        .unwrap();
     let useful: isize =
         (stats.key_mem + stats.val_mem + stats.diff_mem + stats.n_abytes + stats.padding)
             .try_into()
