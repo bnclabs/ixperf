@@ -2,7 +2,9 @@ use log::info;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use rdms::{
     self,
-    core::{Bloom, Diff, DiskIndexFactory, Footprint, Index, Reader, Serialize, Validate, Writer},
+    core::{
+        Bloom, Diff, DiskIndexFactory, Entry, Footprint, Index, Reader, Serialize, Validate, Writer,
+    },
     croaring::CRoaring,
     llrb::{Llrb, Stats as LlrbStats},
     mvcc::{Mvcc, Stats as MvccStats},
@@ -355,7 +357,6 @@ where
 
     // load initial data.
     let mut fstats = stats::Ops::new();
-    let mut lstats = stats::Ops::new();
     let mut rng = SmallRng::from_seed(p.g.seed.to_le_bytes());
     let mut seqno = 0;
     for i in 0..(p.g.loads / p.g.write_ops()) {
@@ -372,21 +373,20 @@ where
         for (_i, cmd) in gen.enumerate() {
             match cmd {
                 Cmd::Set { key, value } => {
-                    lstats.set.sample_start(false);
+                    fstats.set.sample_start(false);
                     let n = w.set(key, value.clone()).unwrap().map_or(0, |_| 1);
-                    lstats.set.sample_end(n);
+                    fstats.set.sample_end(n);
                 }
                 Cmd::Delete { key } => {
-                    lstats.delete.sample_start(false);
+                    fstats.delete.sample_start(false);
                     let items = w.delete(&key).unwrap().map_or(1, |_| 0);
-                    lstats.delete.sample_end(items);
+                    fstats.delete.sample_end(items);
                 }
                 _ => unreachable!(),
             };
         }
         seqno = mem_index.to_seqno();
         index.commit(mem_index.iter().unwrap(), |_| vec![]).unwrap();
-        fstats.merge(&lstats);
     }
 
     index.compact(Bound::Excluded(0), |_| vec![]).unwrap();
@@ -776,15 +776,24 @@ where
     }
 }
 
-fn validate_robt<K, V, B>(r: &mut robt::Snapshot<K, V, B>, _fstats: &stats::Ops, _p: &Profile)
+fn validate_robt<K, V, B>(r: &mut robt::Snapshot<K, V, B>, fstats: &stats::Ops, _p: &Profile)
 where
     K: Clone + Ord + Default + Footprint + Serialize + fmt::Debug + RandomKV,
     V: Clone + Diff + Default + Footprint + Serialize + RandomKV,
     <V as Diff>::D: Clone + Serialize,
     B: Bloom,
 {
-    let stats: RobtStats = r.validate().unwrap();
     info!(target: "ixperf", "validating robt index ...");
+
+    let stats: RobtStats = r.validate().unwrap();
+    let iter = r.iter_with_versions().unwrap();
+    let mut n_muts = 0;
+    for entry in iter {
+        let entry = entry.unwrap();
+        let versions: Vec<Entry<K, V>> = entry.versions().collect();
+        n_muts += versions.len();
+    }
+    assert_eq!(n_muts, fstats.to_total_writes());
 
     let footprint: isize = (stats.m_bytes + stats.z_bytes + stats.v_bytes + stats.n_abytes)
         .try_into()
@@ -793,5 +802,11 @@ where
         (stats.key_mem + stats.val_mem + stats.diff_mem + stats.n_abytes + stats.padding)
             .try_into()
             .unwrap();
-    assert!(useful < footprint)
+
+    assert!(
+        useful < footprint,
+        "failed because useful:{} footprint:{}",
+        useful,
+        footprint
+    )
 }
