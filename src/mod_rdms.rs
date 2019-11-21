@@ -2,7 +2,8 @@ use log::info;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use rdms::{
     self,
-    core::{Diff, DiskIndexFactory, Footprint, Index, Reader, Serialize, Validate, Writer},
+    core::{Bloom, Diff, DiskIndexFactory, Footprint, Index, Reader, Serialize, Validate, Writer},
+    croaring::CRoaring,
     llrb::{Llrb, Stats as LlrbStats},
     mvcc::{Mvcc, Stats as MvccStats},
     nobitmap::NoBitmap,
@@ -12,6 +13,7 @@ use rdms::{
 use std::{
     convert::{TryFrom, TryInto},
     ffi, fmt,
+    hash::Hash,
     ops::Bound,
     thread,
     time::{Duration, SystemTime},
@@ -123,6 +125,7 @@ pub struct RobtOpt {
     value_in_vlog: bool,
     flush_queue_size: usize,
     mmap: bool,
+    bitmap: String,
 }
 
 impl TryFrom<toml::Value> for RobtOpt {
@@ -161,6 +164,7 @@ impl TryFrom<toml::Value> for RobtOpt {
                     robt_opt.flush_queue_size = value.as_integer().unwrap().try_into().unwrap()
                 }
                 "mmap" => robt_opt.mmap = value.as_bool().unwrap(),
+                "bitmap" => robt_opt.bitmap = value.as_str().unwrap().to_string(),
                 _ => panic!("invalid profile parameter {}", name),
             }
         }
@@ -170,11 +174,12 @@ impl TryFrom<toml::Value> for RobtOpt {
 }
 
 impl RobtOpt {
-    fn new<K, V>(&self, name: &str) -> Robt<K, V, NoBitmap>
+    fn new<K, V, B>(&self, name: &str) -> Robt<K, V, B>
     where
-        K: Clone + Ord + Footprint + Serialize,
+        K: 'static + Clone + Ord + Send + Hash + Footprint + Serialize,
         V: Clone + Diff + Footprint + Serialize,
         <V as Diff>::D: Serialize,
+        B: 'static + Send + Bloom,
     {
         let mut config: robt::Config = Default::default();
         config.set_blocksize(self.z_blocksize, self.m_blocksize, self.v_blocksize);
@@ -278,21 +283,26 @@ where
         + Footprint
         + Serialize
         + fmt::Debug
-        + RandomKV,
+        + RandomKV
+        + Hash,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + Serialize + RandomKV,
     <V as Diff>::D: Serialize,
 {
     match p.rdms.index.as_str() {
         "llrb" => perf_llrb::<K, V>(name, p),
         "mvcc" => perf_mvcc::<K, V>(name, p),
-        "robt" => perf_robt::<K, V>(name, p),
+        "robt" => match p.rdms_robt.bitmap.as_str() {
+            "nobitmap" => perf_robt::<K, V, NoBitmap>(name, p),
+            "croaring" => perf_robt::<K, V, CRoaring>(name, p),
+            bitmap => panic!("unsupported bitmap {}", bitmap),
+        },
         name => panic!("unsupported index {}", name),
     }
 }
 
 fn perf_llrb<K, V>(name: &str, p: Profile)
 where
-    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + fmt::Debug + RandomKV,
+    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + fmt::Debug + RandomKV + Hash,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
 {
     let llrb_index = p.rdms_llrb.new(name);
@@ -308,7 +318,7 @@ where
 
 fn perf_mvcc<K, V>(name: &str, p: Profile)
 where
-    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + fmt::Debug + RandomKV,
+    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + fmt::Debug + RandomKV + Hash,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
 {
     let mvcc_index = p.rdms_mvcc.new(name);
@@ -322,7 +332,7 @@ where
     validate_mvcc::<K, V>(&istats, &fstats, &p);
 }
 
-fn perf_robt<K, V>(name: &str, mut p: Profile)
+fn perf_robt<K, V, B>(name: &str, mut p: Profile)
 where
     K: 'static
         + Clone
@@ -333,9 +343,11 @@ where
         + Footprint
         + Serialize
         + fmt::Debug
-        + RandomKV,
+        + RandomKV
+        + Hash,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + Serialize + RandomKV,
     <V as Diff>::D: Serialize,
+    B: 'static + Bloom + Send + Sync,
 {
     let robt_index = p.rdms_robt.new(name);
     let mut index = rdms::Rdms::new(name, robt_index).unwrap();
@@ -381,7 +393,7 @@ where
 
     // validate
     let mut r = index.to_reader().unwrap();
-    validate_robt::<K, V>(&mut r, &fstats, &p);
+    validate_robt::<K, V, B>(&mut r, &fstats, &p);
 
     // optional iteration
     let (start, mut iter_count) = (SystemTime::now(), 0);
@@ -416,7 +428,7 @@ where
 
 fn do_perf<K, V, I>(index: &mut rdms::Rdms<K, V, I>, p: &Profile) -> stats::Ops
 where
-    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
+    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV + Hash,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
     I: Index<K, V>,
     <I as Index<K, V>>::R: 'static + Send + Sync,
@@ -517,7 +529,7 @@ fn do_incremental<K, V, I>(
     p: &Profile,
 ) -> stats::Ops
 where
-    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
+    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV + Hash,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
     I: Index<K, V>,
 {
@@ -578,7 +590,7 @@ where
 
 fn do_read<R, K, V>(id: usize, mut r: R, p: Profile) -> stats::Ops
 where
-    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
+    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV + Hash,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
     R: Reader<K, V>,
 {
@@ -764,11 +776,12 @@ where
     }
 }
 
-fn validate_robt<K, V>(r: &mut robt::Snapshot<K, V, NoBitmap>, _fstats: &stats::Ops, _p: &Profile)
+fn validate_robt<K, V, B>(r: &mut robt::Snapshot<K, V, B>, _fstats: &stats::Ops, _p: &Profile)
 where
     K: Clone + Ord + Default + Footprint + Serialize + fmt::Debug + RandomKV,
     V: Clone + Diff + Default + Footprint + Serialize + RandomKV,
     <V as Diff>::D: Clone + Serialize,
+    B: Bloom,
 {
     let stats: RobtStats = r.validate().unwrap();
     info!(target: "ixperf", "validating robt index ...");

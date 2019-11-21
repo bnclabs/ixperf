@@ -19,7 +19,7 @@ value_size = 400
 seed = 0
 
 # Total number of initial load operations.
-loads = 10_000_000
+loads = 50_000_000
 
 # Total number of incremental set operations.
 sets = 4_000_000
@@ -59,3 +59,4 @@ vlog_file = ""
 value_in_vlog = true
 flush_queue_size = 64
 mmap = true
+bitmap = "croaring"

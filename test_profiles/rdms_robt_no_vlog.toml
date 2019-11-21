@@ -59,3 +59,4 @@ vlog_file = ""
 value_in_vlog = false
 flush_queue_size = 64
 mmap = true
+bitmap = "croaring"
