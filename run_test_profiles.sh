@@ -1,7 +1,11 @@
-for file in `ls -1 test_profiles`;
+for file in `ls -1 test_profiles/rdms_robt*`;
+# `ls -1 test_profiles`;
 do
-    if [ $? -eq 0 ] ; then
-        echo "cargo run --release -- -v --profile profiles/$file | tee ixperf.log"
-        cargo run --release -- -v --profile test_profiles/$file | tee ixperf.log
+    echo "cargo run --release -- -v --profile $file"
+    cargo run --release -- -v --profile $file
+    ret=$?
+    if [ $ret -ne 0 ]; then
+        echo "exit code $ret"
+        exit
     fi
 done
