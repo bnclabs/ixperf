@@ -786,7 +786,7 @@ where
     info!(target: "ixperf", "validating robt index ...");
 
     let stats: RobtStats = r.validate().unwrap();
-    let (n_muts, iter) = (0, r.iter_with_versions().unwrap());
+    let (mut n_muts, iter) = (0, r.iter_with_versions().unwrap());
     for entry in iter {
         let entry = entry.unwrap();
         let versions: Vec<Entry<K, V>> = entry.versions().collect();
