@@ -776,7 +776,7 @@ where
     }
 }
 
-fn validate_robt<K, V, B>(r: &mut robt::Snapshot<K, V, B>, fstats: &stats::Ops, _p: &Profile)
+fn validate_robt<K, V, B>(r: &mut robt::Snapshot<K, V, B>, fstats: &stats::Ops, p: &Profile)
 where
     K: Clone + Ord + Default + Footprint + Serialize + fmt::Debug + RandomKV,
     V: Clone + Diff + Default + Footprint + Serialize + RandomKV,
@@ -786,13 +786,15 @@ where
     info!(target: "ixperf", "validating robt index ...");
 
     let stats: RobtStats = r.validate().unwrap();
-    let (mut n_muts, iter) = (0, r.iter_with_versions().unwrap());
-    for entry in iter {
-        let entry = entry.unwrap();
-        let versions: Vec<Entry<K, V>> = entry.versions().collect();
-        n_muts += versions.len();
+    if p.rdms_robt.delta_ok {
+        let (mut n_muts, iter) = (0, r.iter_with_versions().unwrap());
+        for entry in iter {
+            let entry = entry.unwrap();
+            let versions: Vec<Entry<K, V>> = entry.versions().collect();
+            n_muts += versions.len();
+        }
+        assert_eq!(n_muts, fstats.to_total_writes());
     }
-    assert_eq!(n_muts, fstats.to_total_writes());
 
     let footprint: isize = (stats.m_bytes + stats.z_bytes + stats.v_bytes + stats.n_abytes)
         .try_into()
