@@ -386,9 +386,7 @@ where
             };
         }
         seqno = mem_index.to_seqno();
-        index
-            .commit(mem_index.to_reader().unwrap(), |_| vec![])
-            .unwrap();
+        index.commit(&mut *mem_index, |_| vec![]).unwrap();
     }
 
     index.compact(Bound::Excluded(0), |_| vec![]).unwrap();

@@ -1,5 +1,4 @@
-for file in `ls -1 test_profiles/rdms_robt*`;
-# `ls -1 test_profiles`;
+for file in `ls -1 test_profiles/*`;
 do
     echo "cargo run --release -- -v --profile $file"
     cargo run --release -- -v --profile $file
