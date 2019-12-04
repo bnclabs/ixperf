@@ -210,9 +210,10 @@ impl RdmsOpt {
 
     fn configure<K, V, I>(&self, index: &mut rdms::Rdms<K, V, I>)
     where
-        K: Clone + Ord + Footprint,
-        V: Clone + Diff + Footprint,
-        I: Index<K, V>,
+        K: Send + Clone + Ord + Footprint,
+        V: Send + Clone + Diff + Footprint,
+        <V as Diff>::D: Send,
+        I: 'static + Send + Index<K, V>,
     {
         if self.commit_interval > 0 {
             let interval = Duration::from_secs(self.commit_interval);
@@ -288,7 +289,7 @@ where
         + RandomKV
         + Hash,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + Serialize + RandomKV,
-    <V as Diff>::D: Serialize,
+    <V as Diff>::D: Send + Serialize,
 {
     match p.rdms.index.as_str() {
         "llrb" => perf_llrb::<K, V>(name, p),
@@ -306,6 +307,7 @@ fn perf_llrb<K, V>(name: &str, p: Profile)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + fmt::Debug + RandomKV + Hash,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
+    <V as Diff>::D: Send,
 {
     let llrb_index = p.rdms_llrb.new(name);
     let mut index = rdms::Rdms::new(name, llrb_index).unwrap();
@@ -322,6 +324,7 @@ fn perf_mvcc<K, V>(name: &str, p: Profile)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + fmt::Debug + RandomKV + Hash,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
+    <V as Diff>::D: Send,
 {
     let mvcc_index = p.rdms_mvcc.new(name);
     let mut index = rdms::Rdms::new(name, mvcc_index).unwrap();
@@ -348,7 +351,7 @@ where
         + RandomKV
         + Hash,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + Serialize + RandomKV,
-    <V as Diff>::D: Serialize,
+    <V as Diff>::D: Send + Serialize,
     B: 'static + Bloom + Send + Sync,
 {
     let robt_index = p.rdms_robt.new(name);
