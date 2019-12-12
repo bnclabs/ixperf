@@ -3,7 +3,8 @@ use rand::{rngs::SmallRng, Rng, SeedableRng};
 use rdms::{
     self,
     core::{
-        Bloom, Diff, DiskIndexFactory, Entry, Footprint, Index, Reader, Serialize, Validate, Writer,
+        Bloom, CommitIter, Diff, DiskIndexFactory, Entry, Footprint, Index, Reader, Serialize,
+        Validate, Writer,
     },
     croaring::CRoaring,
     llrb::{Llrb, Stats as LlrbStats},
@@ -389,7 +390,12 @@ where
             };
         }
         seqno = mem_index.to_seqno();
-        index.commit(&mut *mem_index, |_| vec![]).unwrap();
+        index
+            .commit(
+                CommitIter::new(mem_index, (Bound::Unbounded, Bound::Included(seqno))),
+                |meta| meta,
+            )
+            .unwrap();
     }
 
     index.compact(Bound::Excluded(0), |_| vec![]).unwrap();
