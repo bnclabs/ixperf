@@ -253,7 +253,10 @@ impl PlotData {
                 continue;
             };
             let t = t["latency"]["latencies"].as_table().unwrap();
-            out.push((*sec, t[lat].as_integer().unwrap() as u64));
+            // TODO: this might lead to inaccurate plot for latency.
+            if let Some(lat_value) = t.get(lat) {
+                out.push((*sec, lat_value.as_integer().unwrap() as u64));
+            }
         }
         out
     }
