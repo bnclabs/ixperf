@@ -46,6 +46,7 @@ channel_size = 100_000
 name = "rdms-ixperf"
 index = "robt"
 commit_interval = 0 # in seconds.
+initial = 1
 readers = 4
 writers = 0
 
