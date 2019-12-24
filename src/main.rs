@@ -8,8 +8,6 @@ mod mod_llrb;
 mod mod_rdms;
 mod plot;
 // TODO mod mod_lmdb;
-// TODO mod mod_rdms_mvcc;
-// TODO mod mod_rdms_robt;
 mod stats;
 mod utils;
 
@@ -141,8 +139,6 @@ fn main() {
         "llrb-index" => mod_llrb::do_llrb_index("ixperf", p),
         "btree-map" => mod_btree_map::do_btree_map("ixperf", p),
         "rdms" => mod_rdms::do_rdms_index(p),
-        //"rdms-mvcc" => do_rdms_mvcc(p),
-        //"rdms-robt" => do_rdms_robt(p),
         _ => Err(format!("unsupported index-type {}", p.index)),
     };
     match res {
@@ -154,36 +150,6 @@ fn main() {
 }
 
 //
-//fn do_rdms_mvcc(p: Profile) {
-//    match (p.key_type.as_str(), p.val_type.as_str()) {
-//        ("i32", "i32") => mod_rdms_mvcc::perf::<i32, i32>(p),
-//        // ("i32", "array") => mod_rdms_mvcc::perf::<i32, [u8; 32]>(p),
-//        ("i32", "bytes") => mod_rdms_mvcc::perf::<i32, Vec<u8>>(p),
-//        ("i64", "i64") => mod_rdms_mvcc::perf::<i64, i64>(p),
-//        // ("i64", "array") => mod_rdms_mvcc::perf::<i64, [u8; 32]>(p),
-//        ("i64", "bytes") => mod_rdms_mvcc::perf::<i64, Vec<u8>>(p),
-//        // ("array", "array") => mod_rdms_mvcc::perf::<[u8; 32], [u8; 32]>(p),
-//        // ("array", "bytes") => mod_rdms_mvcc::perf::<[u8; 32], Vec<u8>>(p),
-//        ("bytes", "bytes") => mod_rdms_mvcc::perf::<Vec<u8>, Vec<u8>>(p),
-//        _ => panic!("unsupported key/value types {}/{}", p.key_type, p.val_type),
-//    }
-//}
-//
-//fn do_rdms_robt(p: Profile) {
-//    match (p.key_type.as_str(), p.val_type.as_str()) {
-//        ("i32", "i32") => mod_rdms_robt::perf::<i32, i32>(p),
-//        // ("i32", "array") => mod_rdms_robt::perf::<i32, [u8; 32]>(p),
-//        ("i32", "bytes") => mod_rdms_robt::perf::<i32, Vec<u8>>(p),
-//        ("i64", "i64") => mod_rdms_robt::perf::<i64, i64>(p),
-//        // ("i64", "array") => mod_rdms_robt::perf::<i64, [u8; 32]>(p),
-//        ("i64", "bytes") => mod_rdms_robt::perf::<i64, Vec<u8>>(p),
-//        // ("array", "array") => mod_rdms_robt::perf::<[u8; 32], [u8; 32]>(p),
-//        // ("array", "bytes") => mod_rdms_robt::perf::<[u8; 32], Vec<u8>>(p),
-//        ("bytes", "bytes") => mod_rdms_robt::perf::<Vec<u8>, Vec<u8>>(p),
-//        _ => panic!("unsupported key/value types {}/{}", p.key_type, p.val_type),
-//    }
-//}
-
 #[derive(Clone, Default)]
 pub struct Profile {
     pub path: ffi::OsString,
@@ -201,6 +167,7 @@ pub struct Profile {
     pub rdms_llrb: mod_rdms::LlrbOpt,
     pub rdms_mvcc: mod_rdms::MvccOpt,
     pub rdms_robt: mod_rdms::RobtOpt,
+    pub rdms_llrb_shards: mod_rdms::ShardedLlrbOpt,
 }
 
 impl TryFrom<toml::Value> for Profile {
@@ -216,10 +183,14 @@ impl TryFrom<toml::Value> for Profile {
                 _ => return Err(format!("invalid option {}", name)),
             }
         }
-        p.g = TryFrom::try_from(value.clone())?;
         p.rdms = TryFrom::try_from(value.clone())
             .ok()
             .unwrap_or(Default::default());
+        p.g = {
+            let mut g: generator::GenOptions = TryFrom::try_from(value.clone())?;
+            g.initial = p.rdms.initial;
+            g
+        };
         p.rdms_llrb = TryFrom::try_from(value.clone())
             .ok()
             .unwrap_or(Default::default());
@@ -229,112 +200,12 @@ impl TryFrom<toml::Value> for Profile {
         p.rdms_robt = TryFrom::try_from(value.clone())
             .ok()
             .unwrap_or(Default::default());
+        p.rdms_llrb_shards = TryFrom::try_from(value.clone())
+            .ok()
+            .unwrap_or(Default::default());
         Ok(p)
     }
 }
-
-//impl From<toml::Value> for Profile {
-//    fn from(value: toml::Value) -> Profile {
-//        let mut p: Profile = Default::default();
-//
-//        // common profile
-//        let section = &value["ixperf"];
-//        for (name, value) in section.as_table().unwrap().iter() {
-//            match name.as_str() {
-//                "index" => p.index = value.as_str().unwrap().to_string(),
-//                "key_type" => p.key_type = value.as_str().unwrap().to_string(),
-//                "value_type" => p.val_type = value.as_str().unwrap().to_string(),
-//                "key_size" => {
-//                    p.key_size = value.as_integer().unwrap().try_into().unwrap();
-//                }
-//                "value_size" => {
-//                    p.val_size = value.as_integer().unwrap().try_into().unwrap();
-//                }
-//                "seed" => {
-//                    p.seed = value.as_integer().unwrap().try_into().unwrap();
-//                }
-//                "loads" => {
-//                    p.loads = value.as_integer().unwrap().try_into().unwrap();
-//                }
-//                "sets" => {
-//                    p.sets = value.as_integer().unwrap().try_into().unwrap();
-//                }
-//                "deletes" => {
-//                    p.deletes = value.as_integer().unwrap().try_into().unwrap();
-//                }
-//                "gets" => {
-//                    p.gets = value.as_integer().unwrap().try_into().unwrap();
-//                }
-//                "ranges" => {
-//                    p.ranges = value.as_integer().unwrap().try_into().unwrap();
-//                }
-//                "reverses" => {
-//                    p.g.reverses = value.as_integer().unwrap().try_into().unwrap();
-//                }
-//                _ => panic!("invalid profile parameter {}", name),
-//            }
-//        }
-//
-//        match p.index.as_str() {
-//            "llrb-index" => (),
-//            "rdms-llrb" => {
-//                let section = &value["rdms-llrb"];
-//                for (name, value) in section.as_table().unwrap().iter() {
-//                    match name.as_str() {
-//                        "lsm" => p.lsm = value.as_bool().unwrap(),
-//                        "readers" => {
-//                            let v = value.as_integer().unwrap();
-//                            p.readers = v.try_into().unwrap();
-//                        }
-//                        "writers" => {
-//                            let v = value.as_integer().unwrap();
-//                            p.writers = v.try_into().unwrap();
-//                        }
-//                        _ => panic!("invalid profile parameter {}", name),
-//                    }
-//                }
-//            }
-//            "rdms-mvcc" => {
-//                let section = &value["rdms-mvcc"];
-//                for (name, value) in section.as_table().unwrap().iter() {
-//                    match name.as_str() {
-//                        "lsm" => p.lsm = value.as_bool().unwrap(),
-//                        "readers" => {
-//                            let v = value.as_integer().unwrap();
-//                            p.readers = v.try_into().unwrap();
-//                        }
-//                        "writers" => {
-//                            let v = value.as_integer().unwrap();
-//                            p.writers = v.try_into().unwrap();
-//                        }
-//                        _ => panic!("invalid profile parameter {}", name),
-//                    }
-//                }
-//            }
-//            "rdms-robt" => {
-//                let section = &value["rdms-robt"];
-//                for (name, value) in section.as_table().unwrap().iter() {
-//                    match name.as_str() {
-//                        "readers" => {
-//                            let v = value.as_integer().unwrap();
-//                            p.readers = v.try_into().unwrap();
-//                        }
-//                        "path" => {
-//                            p.path = {
-//                                let v = value.as_str().unwrap();
-//                                let path: &ffi::OsStr = v.as_ref();
-//                                path.to_os_string()
-//                            }
-//                        }
-//                        _ => panic!("invalid profile parameter {}", name),
-//                    }
-//                }
-//            }
-//            _ => panic!("invalid index {}", p.index),
-//        }
-//        p
-//    }
-//}
 
 #[cfg(test)]
 mod jealloc_bench;

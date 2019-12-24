@@ -26,6 +26,8 @@ pub struct GenOptions {
     pub reverses: usize,
     pub iters: bool,
     pub channel_size: usize,
+    // from rdms
+    pub initial: usize,
 }
 
 impl GenOptions {
@@ -400,7 +402,7 @@ pub trait RandomKV {
 
 impl RandomKV for i32 {
     fn gen_key(&self, rng: &mut SmallRng, g: &GenOptions) -> i32 {
-        let limit = g.loads as i32;
+        let limit = (g.loads * g.initial) as i32;
         i32::abs(rng.gen::<i32>() % limit)
     }
 
@@ -415,7 +417,7 @@ impl RandomKV for i32 {
 
 impl RandomKV for i64 {
     fn gen_key(&self, rng: &mut SmallRng, g: &GenOptions) -> i64 {
-        let limit = g.loads as i64;
+        let limit = (g.loads * g.initial) as i64;
         i64::abs(rng.gen::<i64>() % limit)
     }
 
@@ -430,7 +432,7 @@ impl RandomKV for i64 {
 
 impl RandomKV for [u8; 32] {
     fn gen_key(&self, rng: &mut SmallRng, g: &GenOptions) -> [u8; 32] {
-        let limit = g.loads as i64;
+        let limit = (g.loads * g.initial) as i64;
         let num = i64::abs(rng.gen::<i64>() % limit);
         let mut arr = [0_u8; 32];
         let src = format!("{:032}", num).as_bytes().to_vec();
@@ -455,7 +457,7 @@ impl RandomKV for [u8; 32] {
 
 impl RandomKV for [u8; 20] {
     fn gen_key(&self, rng: &mut SmallRng, g: &GenOptions) -> [u8; 20] {
-        let limit = g.loads as i64;
+        let limit = (g.loads * g.initial) as i64;
         let num = i64::abs(rng.gen::<i64>() % limit);
         let mut arr = [0_u8; 20];
         let src = format!("{:020}", num).as_bytes().to_vec();
@@ -483,7 +485,7 @@ impl RandomKV for Vec<u8> {
         let mut key = Vec::with_capacity(g.key_size);
         key.resize(g.key_size, b'0');
 
-        let limit = g.loads as i64;
+        let limit = (g.loads * g.initial) as i64;
         let num = i64::abs(rng.gen::<i64>() % limit);
         let src = format!("{:0width$}", num, width = g.key_size);
         src.as_bytes().to_vec()

@@ -1,5 +1,6 @@
 use log::info;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
+
 use rdms::{
     self,
     core::{
@@ -12,13 +13,14 @@ use rdms::{
     nobitmap::NoBitmap,
     robt::{self, Robt, Stats as RobtStats},
 };
+use rdms_ee::sharded_llrb;
 
 use std::{
     convert::{TryFrom, TryInto},
     ffi, fmt,
     hash::Hash,
     ops::Bound,
-    thread,
+    thread, time,
     time::{Duration, SystemTime},
 };
 
@@ -196,17 +198,75 @@ impl RobtOpt {
 }
 
 #[derive(Default, Clone)]
+pub struct ShardedLlrbOpt {
+    lsm: bool,
+    sticky: bool,
+    spin: bool,
+    interval: i64,
+    max_shards: i64,
+    max_entries: i64,
+}
+
+impl TryFrom<toml::Value> for ShardedLlrbOpt {
+    type Error = String;
+
+    fn try_from(value: toml::Value) -> Result<Self, Self::Error> {
+        let mut opt: ShardedLlrbOpt = Default::default();
+
+        let section = match &value.get("rdms-llrb-shards") {
+            None => return Err("not found".to_string()),
+            Some(section) => section.clone(),
+        };
+        for (name, value) in section.as_table().unwrap().iter() {
+            match name.as_str() {
+                "lsm" => opt.lsm = value.as_bool().unwrap(),
+                "sticky" => opt.sticky = value.as_bool().unwrap(),
+                "spin" => opt.spin = value.as_bool().unwrap(),
+                "interval" => opt.interval = value.as_integer().unwrap(),
+                "max_shards" => opt.max_shards = value.as_integer().unwrap(),
+                "max_entries" => opt.max_entries = value.as_integer().unwrap(),
+                _ => panic!("invalid profile parameter {}", name),
+            }
+        }
+        Ok(opt)
+    }
+}
+
+impl ShardedLlrbOpt {
+    fn new<K, V>(&self, name: &str) -> Box<sharded_llrb::Shards<K, V>>
+    where
+        K: 'static + Send + Clone + Ord + Footprint,
+        V: 'static + Send + Clone + Diff + Footprint,
+        <V as Diff>::D: Send,
+    {
+        let mut index = sharded_llrb::Shards::new(name);
+        index
+            .set_lsm(self.lsm)
+            .set_sticky(self.sticky)
+            .set_spinlatch(self.spin)
+            .set_shard_config(self.max_shards as usize, self.max_entries as usize)
+            .set_interval(time::Duration::from_secs(self.interval as u64));
+        index
+    }
+}
+
+#[derive(Default, Clone)]
 pub struct RdmsOpt {
-    index: String,
-    name: String,
-    commit_interval: u64,
-    readers: usize,
-    writers: usize,
+    pub index: String,
+    pub name: String,
+    pub commit_interval: u64,
+    pub initial: usize,
+    pub readers: usize,
+    pub writers: usize,
 }
 
 impl RdmsOpt {
-    fn threads(&self) -> usize {
+    fn concur_threads(&self) -> usize {
         self.readers + self.writers
+    }
+
+    fn initial_threads(&self) -> usize {
+        self.initial
     }
 
     fn configure<K, V, I>(&self, index: &mut rdms::Rdms<K, V, I>)
@@ -240,6 +300,10 @@ impl TryFrom<toml::Value> for RdmsOpt {
                 "commit_interval" => {
                     let v = value.as_integer().unwrap();
                     rdms_opt.commit_interval = v.try_into().unwrap();
+                }
+                "initial" => {
+                    let v = value.as_integer().unwrap();
+                    rdms_opt.initial = v.try_into().unwrap();
                 }
                 "readers" => {
                     let v = value.as_integer().unwrap();
@@ -300,6 +364,7 @@ where
             "croaring" => perf_robt::<K, V, CRoaring>(name, p),
             bitmap => panic!("unsupported bitmap {}", bitmap),
         },
+        "llrb-shards" => perf_llrb_shards::<K, V>(name, p),
         name => panic!("unsupported index {}", name),
     }
 }
@@ -435,6 +500,24 @@ where
     info!(target: "ixperf", "concurrent stats\n{:?}", fstats);
 }
 
+fn perf_llrb_shards<K, V>(name: &str, p: Profile)
+where
+    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + fmt::Debug + RandomKV + Hash,
+    V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
+    <V as Diff>::D: Send,
+{
+    let index = p.rdms_llrb_shards.new(name);
+    let mut index = rdms::Rdms::new(name, index).unwrap();
+    p.rdms.configure(&mut index);
+
+    let fstats = do_perf::<K, V, Box<sharded_llrb::Shards<K, V>>>(&mut index, &p);
+
+    let istats = index.validate().unwrap();
+    info!(target: "ixperf", "rdms llrb-shards stats\n{}", istats);
+    // TODO
+    // validate_llrb::<K, V>(&istats, &fstats, &p);
+}
+
 fn do_perf<K, V, I>(index: &mut rdms::Rdms<K, V, I>, p: &Profile) -> stats::Ops
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV + Hash,
@@ -458,7 +541,7 @@ where
     let idur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
 
     let total_ops = p.g.read_ops() + p.g.write_ops();
-    let fstats = if p.rdms.threads() == 0 && total_ops > 0 {
+    let fstats = if p.rdms.concur_threads() == 0 && total_ops > 0 {
         fstats.merge(&do_incremental(index, &p));
         fstats
     } else if (p.g.read_ops() + p.g.write_ops()) > 0 {
@@ -499,36 +582,29 @@ where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
     I: Index<K, V>,
+    <I as Index<K, V>>::W: 'static + Send + Sync,
 {
     if p.g.loads == 0 {
         return stats::Ops::new();
     }
 
+    let n_threads = p.rdms.initial_threads();
     info!(
         target: "ixperf",
-        "initial load for type <{},{}>", p.key_type, p.val_type
+        "initial load for type <{},{}> {} threads",
+        p.key_type, p.val_type, n_threads
     );
-    let mut w = index.to_writer().unwrap();
-    let mut fstats = stats::Ops::new();
-    let mut lstats = stats::Ops::new();
-    let gen = InitialLoad::<K, V>::new(p.g.clone());
-    for (_i, cmd) in gen.enumerate() {
-        match cmd {
-            Cmd::Load { key, value } => {
-                lstats.load.sample_start(false);
-                let items = w.set(key, value).unwrap().map_or(0, |_| 1);
-                lstats.load.sample_end(items);
-            }
-            _ => unreachable!(),
-        };
-        if p.verbose && lstats.is_sec_elapsed() {
-            info!(target: "ixperf", "initial periodic-stats\n{}", lstats);
-            fstats.merge(&lstats);
-            lstats = stats::Ops::new();
-        }
-    }
-    fstats.merge(&lstats);
 
+    let mut threads = vec![];
+    for i in 0..n_threads {
+        let w = index.to_writer().unwrap();
+        let pr = p.clone();
+        threads.push(thread::spawn(move || do_initial(i, w, pr)));
+    }
+    let mut fstats = stats::Ops::new();
+    for t in threads {
+        fstats.merge(&t.join().unwrap());
+    }
     info!(target: "ixperf", "initial stats\n{:?}\n", fstats);
     fstats
 }
@@ -597,12 +673,46 @@ where
     fstats
 }
 
-fn do_read<R, K, V>(id: usize, mut r: R, p: Profile) -> stats::Ops
+fn do_initial<W, K, V>(id: usize, mut w: W, mut p: Profile) -> stats::Ops
+where
+    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
+    V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
+    W: Writer<K, V>,
+{
+    p.g.seed += (id * 100) as u128; // change the seed
+
+    let mut fstats = stats::Ops::new();
+    let mut lstats = stats::Ops::new();
+    let gen = InitialLoad::<K, V>::new(p.g.clone());
+    for (_i, cmd) in gen.enumerate() {
+        match cmd {
+            Cmd::Load { key, value } => {
+                lstats.load.sample_start(false);
+                let items = w.set(key, value).unwrap().map_or(0, |_| 1);
+                lstats.load.sample_end(items);
+            }
+            _ => unreachable!(),
+        };
+        if p.verbose && lstats.is_sec_elapsed() {
+            info!(target: "ixperf", "initial-{} periodic-stats\n{}", id, lstats);
+            fstats.merge(&lstats);
+            lstats = stats::Ops::new();
+        }
+    }
+    fstats.merge(&lstats);
+
+    info!(target: "ixperf", "initial-{} stats\n{:?}", id, fstats);
+    fstats
+}
+
+fn do_read<R, K, V>(id: usize, mut r: R, mut p: Profile) -> stats::Ops
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV + Hash,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
     R: Reader<K, V>,
 {
+    p.g.seed += (id * 100) as u128; // change the seed
+
     if p.g.read_ops() == 0 {
         return stats::Ops::new();
     }
@@ -646,12 +756,14 @@ where
     fstats
 }
 
-fn do_write<W, K, V>(id: usize, mut w: W, p: Profile) -> stats::Ops
+fn do_write<W, K, V>(id: usize, mut w: W, mut p: Profile) -> stats::Ops
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
     W: Writer<K, V>,
 {
+    p.g.seed += (id * 100) as u128; // change the seed
+
     if p.g.write_ops() == 0 {
         return stats::Ops::new();
     }
