@@ -43,6 +43,14 @@ iters = false
 # channel size to use between generator thread and loader thread.
 channel_size = 100_000
 
+[rdms]
+name = "rdms-ixperf"
+index = "llrb-shards"
+commit_interval = 0 # in seconds.
+initial = 1
+readers = 0
+writers = 0
+
 [llrb-index]
 # no other options other than the [ixperf]
 
@@ -50,18 +58,9 @@ channel_size = 100_000
 # Whether to create index in LSM (log-structured-merge) mode.
 lsm = false
 
-# Number of reader threads.
-readers = 0
-
-# Number of writer threads.
-writers = 0
-
 [rdms-robt]
 # Whether to create index in LSM (log-structured-merge) mode.
 lsm = false
 
 # On disk path, for index that need disk access.
 path = ""
-
-# Number of reader threads.
-readers = 0
