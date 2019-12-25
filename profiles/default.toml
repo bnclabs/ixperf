@@ -45,7 +45,7 @@ channel_size = 100_000
 
 [rdms]
 name = "rdms-ixperf"
-index = "llrb-shards"
+index = "shllrb"
 commit_interval = 0 # in seconds.
 initial = 1
 readers = 0
