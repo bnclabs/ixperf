@@ -167,7 +167,7 @@ pub struct Profile {
     pub rdms_llrb: mod_rdms::LlrbOpt,
     pub rdms_mvcc: mod_rdms::MvccOpt,
     pub rdms_robt: mod_rdms::RobtOpt,
-    pub rdms_llrb_shards: mod_rdms::ShardedLlrbOpt,
+    pub rdms_shllrb: mod_rdms::ShllrbOpt,
 }
 
 impl TryFrom<toml::Value> for Profile {
@@ -200,7 +200,7 @@ impl TryFrom<toml::Value> for Profile {
         p.rdms_robt = TryFrom::try_from(value.clone())
             .ok()
             .unwrap_or(Default::default());
-        p.rdms_llrb_shards = TryFrom::try_from(value.clone())
+        p.rdms_shllrb = TryFrom::try_from(value.clone())
             .ok()
             .unwrap_or(Default::default());
         Ok(p)

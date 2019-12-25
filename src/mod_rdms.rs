@@ -13,7 +13,7 @@ use rdms::{
     nobitmap::NoBitmap,
     robt::{self, Robt, Stats as RobtStats},
 };
-use rdms_ee::sharded_llrb;
+use rdms_ee::shllrb;
 
 use std::{
     convert::{TryFrom, TryInto},
@@ -198,7 +198,7 @@ impl RobtOpt {
 }
 
 #[derive(Default, Clone)]
-pub struct ShardedLlrbOpt {
+pub struct ShllrbOpt {
     lsm: bool,
     sticky: bool,
     spin: bool,
@@ -207,13 +207,13 @@ pub struct ShardedLlrbOpt {
     max_entries: i64,
 }
 
-impl TryFrom<toml::Value> for ShardedLlrbOpt {
+impl TryFrom<toml::Value> for ShllrbOpt {
     type Error = String;
 
     fn try_from(value: toml::Value) -> Result<Self, Self::Error> {
-        let mut opt: ShardedLlrbOpt = Default::default();
+        let mut opt: ShllrbOpt = Default::default();
 
-        let section = match &value.get("rdms-llrb-shards") {
+        let section = match &value.get("rdms-shllrb") {
             None => return Err("not found".to_string()),
             Some(section) => section.clone(),
         };
@@ -232,14 +232,14 @@ impl TryFrom<toml::Value> for ShardedLlrbOpt {
     }
 }
 
-impl ShardedLlrbOpt {
-    fn new<K, V>(&self, name: &str) -> Box<sharded_llrb::Shards<K, V>>
+impl ShllrbOpt {
+    fn new<K, V>(&self, name: &str) -> Box<shllrb::Shllrb<K, V>>
     where
         K: 'static + Send + Clone + Ord + Footprint,
         V: 'static + Send + Clone + Diff + Footprint,
         <V as Diff>::D: Send,
     {
-        let mut index = sharded_llrb::Shards::new(name);
+        let mut index = shllrb::Shllrb::new(name);
         index
             .set_lsm(self.lsm)
             .set_sticky(self.sticky)
@@ -364,7 +364,7 @@ where
             "croaring" => perf_robt::<K, V, CRoaring>(name, p),
             bitmap => panic!("unsupported bitmap {}", bitmap),
         },
-        "llrb-shards" => perf_llrb_shards::<K, V>(name, p),
+        "shllrb" => perf_shllrb::<K, V>(name, p),
         name => panic!("unsupported index {}", name),
     }
 }
@@ -500,20 +500,20 @@ where
     info!(target: "ixperf", "concurrent stats\n{:?}", fstats);
 }
 
-fn perf_llrb_shards<K, V>(name: &str, p: Profile)
+fn perf_shllrb<K, V>(name: &str, p: Profile)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + fmt::Debug + RandomKV + Hash,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
     <V as Diff>::D: Send,
 {
-    let index = p.rdms_llrb_shards.new(name);
+    let index = p.rdms_shllrb.new(name);
     let mut index = rdms::Rdms::new(name, index).unwrap();
     p.rdms.configure(&mut index);
 
-    let fstats = do_perf::<K, V, Box<sharded_llrb::Shards<K, V>>>(&mut index, &p);
+    let fstats = do_perf::<K, V, Box<shllrb::Shllrb<K, V>>>(&mut index, &p);
 
     let istats = index.validate().unwrap();
-    info!(target: "ixperf", "rdms llrb-shards stats\n{}", istats);
+    info!(target: "ixperf", "rdms shllrb stats\n{}", istats);
     // TODO
     // validate_llrb::<K, V>(&istats, &fstats, &p);
 }
@@ -827,19 +827,20 @@ where
 
     if p.rdms_llrb.lsm == false {
         let mut rng = SmallRng::from_seed(p.g.seed.to_le_bytes());
-        let (kfp, vfp) = match Cmd::<K, V>::gen_load(&mut rng, &p.g) {
+        let (kfp1, kfp2, vfp) = match Cmd::<K, V>::gen_load(&mut rng, &p.g) {
             Cmd::Load { key, value } => (
+                std::mem::size_of::<K>() + (key.footprint().unwrap() as usize),
                 key.footprint().unwrap() as usize,
-                value.footprint().unwrap() as usize,
+                std::mem::size_of::<V>() + (value.footprint().unwrap() as usize),
             ),
             _ => unreachable!(),
         };
-        let (entries, vfp) = (stats.entries, vfp + std::mem::size_of::<V>());
+        let entries = stats.entries;
 
-        let key_footprint: isize = (kfp * entries).try_into().unwrap();
+        let key_footprint: isize = ((kfp1 + kfp2) * entries).try_into().unwrap();
         assert_eq!(stats.key_footprint, key_footprint);
 
-        let mut tree_footprint: isize = ((stats.node_size + kfp + vfp) * entries)
+        let mut tree_footprint: isize = ((stats.node_size + kfp2 + vfp) * entries)
             .try_into()
             .unwrap();
         tree_footprint -= (vfp * stats.n_deleted) as isize; // for sticky mode.
