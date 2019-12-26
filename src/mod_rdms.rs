@@ -514,8 +514,7 @@ where
 
     let istats = index.validate().unwrap();
     info!(target: "ixperf", "rdms shllrb stats\n{}", istats);
-    // TODO
-    // validate_llrb::<K, V>(&istats, &fstats, &p);
+    validate_shllrb::<K, V>(&istats, &fstats, &p);
 }
 
 fn do_perf<K, V, I>(index: &mut rdms::Rdms<K, V, I>, p: &Profile) -> stats::Ops
@@ -932,4 +931,50 @@ where
         useful,
         footprint
     )
+}
+
+fn validate_shllrb<K, V>(stats: &LlrbStats, fstats: &stats::Ops, p: &Profile)
+where
+    K: Clone + Ord + Default + Footprint + fmt::Debug + RandomKV,
+    V: Clone + Diff + Default + Footprint + RandomKV,
+{
+    if p.rdms_shllrb.lsm || p.rdms_shllrb.sticky {
+        let expected_entries = (fstats.load.count - fstats.load.items)
+            + (fstats.set.count - fstats.set.items)
+            + fstats.delete.items;
+        assert_eq!(stats.entries, expected_entries);
+    } else {
+        let expected_entries = (fstats.load.count - fstats.load.items)
+            + (fstats.set.count - fstats.set.items)
+            - (fstats.delete.count - fstats.delete.items);
+        assert_eq!(stats.entries, expected_entries);
+    }
+
+    // assert_eq!(stats.rw_latch.read_locks, fstats.to_total_reads() + 3);
+    // assert_eq!(stats.rw_latch.write_locks, fstats.to_total_writes());
+    if fstats.to_total_reads() == 0 || fstats.to_total_writes() == 0 {
+        assert_eq!(stats.rw_latch.conflicts, 0);
+    }
+
+    if p.rdms_shllrb.lsm == false {
+        let mut rng = SmallRng::from_seed(p.g.seed.to_le_bytes());
+        let (kfp1, kfp2, vfp) = match Cmd::<K, V>::gen_load(&mut rng, &p.g) {
+            Cmd::Load { key, value } => (
+                std::mem::size_of::<K>() + (key.footprint().unwrap() as usize),
+                key.footprint().unwrap() as usize,
+                std::mem::size_of::<V>() + (value.footprint().unwrap() as usize),
+            ),
+            _ => unreachable!(),
+        };
+        let entries = stats.entries;
+
+        let key_footprint: isize = ((kfp1 + kfp2) * entries).try_into().unwrap();
+        assert_eq!(stats.key_footprint, key_footprint);
+
+        let mut tree_footprint: isize = ((stats.node_size + kfp2 + vfp) * entries)
+            .try_into()
+            .unwrap();
+        tree_footprint -= (vfp * stats.n_deleted) as isize; // for sticky mode.
+        assert_eq!(stats.tree_footprint, tree_footprint);
+    }
 }
