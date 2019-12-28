@@ -455,6 +455,7 @@ where
             };
         }
         seqno = mem_index.to_seqno();
+        std::mem::drop(w);
         index
             .commit(
                 CommitIter::new(mem_index, (Bound::Unbounded, Bound::Included(seqno))),
@@ -877,19 +878,20 @@ where
 
     if p.rdms_mvcc.lsm == false {
         let mut rng = SmallRng::from_seed(p.g.seed.to_le_bytes());
-        let (kfp, vfp) = match Cmd::<K, V>::gen_load(&mut rng, &p.g) {
+        let (kfp1, kfp2, vfp) = match Cmd::<K, V>::gen_load(&mut rng, &p.g) {
             Cmd::Load { key, value } => (
+                std::mem::size_of::<K>() + (key.footprint().unwrap() as usize),
                 key.footprint().unwrap() as usize,
-                value.footprint().unwrap() as usize,
+                std::mem::size_of::<V>() + (value.footprint().unwrap() as usize),
             ),
             _ => unreachable!(),
         };
-        let (entries, vfp) = (stats.entries, vfp + std::mem::size_of::<V>());
+        let entries = stats.entries;
 
-        let key_footprint: isize = (kfp * entries).try_into().unwrap();
+        let key_footprint: isize = ((kfp1 + kfp2) * entries).try_into().unwrap();
         assert_eq!(stats.key_footprint, key_footprint);
 
-        let mut tree_footprint: isize = ((stats.node_size + kfp + vfp) * entries)
+        let mut tree_footprint: isize = ((stats.node_size + kfp2 + vfp) * entries)
             .try_into()
             .unwrap();
         tree_footprint -= (vfp * stats.n_deleted) as isize; // for sticky mode.
