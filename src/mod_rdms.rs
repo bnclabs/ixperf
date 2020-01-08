@@ -233,13 +233,13 @@ impl TryFrom<toml::Value> for ShllrbOpt {
 }
 
 impl ShllrbOpt {
-    fn new<K, V>(&self, name: &str) -> Box<shllrb::Shllrb<K, V>>
+    fn new<K, V>(&self, name: &str) -> Box<shllrb::ShLlrb<K, V>>
     where
         K: 'static + Send + Clone + Ord + Footprint,
         V: 'static + Send + Clone + Diff + Footprint,
         <V as Diff>::D: Send,
     {
-        let mut index = shllrb::Shllrb::new(name);
+        let mut index = shllrb::ShLlrb::new(name);
         index
             .set_lsm(self.lsm)
             .set_sticky(self.sticky)
@@ -511,7 +511,7 @@ where
     let mut index = rdms::Rdms::new(name, index).unwrap();
     p.rdms.configure(&mut index);
 
-    let fstats = do_perf::<K, V, Box<shllrb::Shllrb<K, V>>>(&mut index, &p);
+    let fstats = do_perf::<K, V, Box<shllrb::ShLlrb<K, V>>>(&mut index, &p);
 
     let istats = index.validate().unwrap();
     info!(target: "ixperf", "rdms shllrb stats\n{}", istats);
