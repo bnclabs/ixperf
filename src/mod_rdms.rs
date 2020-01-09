@@ -454,7 +454,7 @@ where
                 _ => unreachable!(),
             };
         }
-        seqno = mem_index.to_seqno();
+        seqno = mem_index.to_seqno().unwrap();
         std::mem::drop(w);
         index
             .commit(
