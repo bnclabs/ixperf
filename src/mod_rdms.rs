@@ -12,8 +12,8 @@ use rdms::{
     mvcc::{Mvcc, Stats as MvccStats},
     nobitmap::NoBitmap,
     robt::{self, Robt, Stats as RobtStats},
+    shllrb,
 };
-use rdms_ee::shllrb;
 
 use std::{
     convert::{TryFrom, TryInto},
@@ -181,9 +181,9 @@ impl TryFrom<toml::Value> for RobtOpt {
 impl RobtOpt {
     fn new<K, V, B>(&self, name: &str) -> Robt<K, V, B>
     where
-        K: 'static + Clone + Ord + Send + Hash + Footprint + Serialize,
-        V: Clone + Diff + Footprint + Serialize,
-        <V as Diff>::D: Serialize,
+        K: 'static + Default + Clone + Ord + Send + Hash + Footprint + Serialize,
+        V: Clone + Default + Diff + Footprint + Serialize,
+        <V as Diff>::D: Default + Serialize,
         B: 'static + Send + Bloom,
     {
         let mut config: robt::Config = Default::default();
@@ -354,7 +354,7 @@ where
         + RandomKV
         + Hash,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + Serialize + RandomKV,
-    <V as Diff>::D: Send + Serialize,
+    <V as Diff>::D: Send + Default + Serialize,
 {
     match p.rdms.index.as_str() {
         "llrb" => perf_llrb::<K, V>(name, p),
@@ -417,7 +417,7 @@ where
         + RandomKV
         + Hash,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + Serialize + RandomKV,
-    <V as Diff>::D: Send + Serialize,
+    <V as Diff>::D: Send + Default + Serialize,
     B: 'static + Bloom + Send + Sync,
 {
     let robt_index = p.rdms_robt.new(name);
@@ -903,7 +903,7 @@ fn validate_robt<K, V, B>(r: &mut robt::Snapshot<K, V, B>, fstats: &stats::Ops, 
 where
     K: Clone + Ord + Default + Footprint + Serialize + fmt::Debug + RandomKV,
     V: Clone + Diff + Default + Footprint + Serialize + RandomKV,
-    <V as Diff>::D: Clone + Serialize,
+    <V as Diff>::D: Default + Clone + Serialize,
     B: Bloom,
 {
     info!(target: "ixperf", "validating robt index ...");
