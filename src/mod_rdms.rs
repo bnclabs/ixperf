@@ -4,8 +4,8 @@ use rand::{rngs::SmallRng, Rng, SeedableRng};
 use rdms::{
     self,
     core::{
-        Bloom, CommitIter, Diff, DiskIndexFactory, Entry, Footprint, Index, Reader, Serialize,
-        Validate, Writer,
+        Bloom, CommitIter, Cutoff, Diff, DiskIndexFactory, Entry, Footprint, Index, Reader,
+        Serialize, Validate, Writer,
     },
     croaring::CRoaring,
     llrb::{Llrb, Stats as LlrbStats},
@@ -239,14 +239,14 @@ impl ShllrbOpt {
         V: 'static + Send + Clone + Diff + Footprint,
         <V as Diff>::D: Send,
     {
-        let mut index = shllrb::ShLlrb::new(name);
-        index
+        let mut config: shllrb::Config = Default::default();
+        config
             .set_lsm(self.lsm)
             .set_sticky(self.sticky)
             .set_spinlatch(self.spin)
             .set_shard_config(self.max_shards as usize, self.max_entries as usize)
             .set_interval(time::Duration::from_secs(self.interval as u64));
-        index
+        shllrb::ShLlrb::new(name, config)
     }
 }
 
@@ -464,7 +464,8 @@ where
             .unwrap();
     }
 
-    index.compact(Bound::Excluded(0), |_| vec![]).unwrap();
+    let cutoff = Cutoff::new_lsm(Bound::Excluded(0));
+    index.compact(cutoff, |_| vec![]).unwrap();
 
     // validate
     let mut r = index.to_reader().unwrap();
