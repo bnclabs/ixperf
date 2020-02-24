@@ -119,6 +119,7 @@ where
             let (tx, rx) = mpsc::channel();
             (Tx::N(tx), rx)
         };
+
         let _thread = { thread::spawn(move || initial_load(g, tx)) };
         InitialLoad { _thread, rx }
     }
@@ -170,7 +171,14 @@ where
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
     pub fn new(g: GenOptions) -> IncrementalRead<K, V> {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = if g.channel_size > 0 {
+            let (tx, rx) = mpsc::sync_channel(g.channel_size);
+            (Tx::S(tx), rx)
+        } else {
+            let (tx, rx) = mpsc::channel();
+            (Tx::N(tx), rx)
+        };
+
         let _thread = { thread::spawn(move || incremental_read(g, tx)) };
         IncrementalRead { _thread, rx }
     }
@@ -188,7 +196,7 @@ where
     }
 }
 
-fn incremental_read<K, V>(g: GenOptions, tx: mpsc::Sender<Cmd<K, V>>)
+fn incremental_read<K, V>(g: GenOptions, tx: Tx<K, V>)
 where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
@@ -212,7 +220,7 @@ where
         } else {
             unreachable!();
         };
-        tx.send(cmd).unwrap();
+        tx.post(cmd).unwrap();
         total = gets + ranges + reverses;
     }
 
@@ -239,7 +247,14 @@ where
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
     pub fn new(g: GenOptions) -> IncrementalWrite<K, V> {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = if g.channel_size > 0 {
+            let (tx, rx) = mpsc::sync_channel(g.channel_size);
+            (Tx::S(tx), rx)
+        } else {
+            let (tx, rx) = mpsc::channel();
+            (Tx::N(tx), rx)
+        };
+
         let _thread = { thread::spawn(move || incremental_write(g, tx)) };
         IncrementalWrite { _thread, rx }
     }
@@ -257,7 +272,7 @@ where
     }
 }
 
-fn incremental_write<K, V>(g: GenOptions, tx: mpsc::Sender<Cmd<K, V>>)
+fn incremental_write<K, V>(g: GenOptions, tx: Tx<K, V>)
 where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
@@ -279,7 +294,7 @@ where
             unreachable!();
         };
 
-        tx.send(cmd).unwrap();
+        tx.post(cmd).unwrap();
         total = sets + dels;
     }
 
@@ -306,7 +321,14 @@ where
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
     pub fn new(g: GenOptions) -> IncrementalLoad<K, V> {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = if g.channel_size > 0 {
+            let (tx, rx) = mpsc::sync_channel(g.channel_size);
+            (Tx::S(tx), rx)
+        } else {
+            let (tx, rx) = mpsc::channel();
+            (Tx::N(tx), rx)
+        };
+
         let _thread = { thread::spawn(move || incremental_load(g, tx)) };
         IncrementalLoad { _thread, rx }
     }
@@ -324,7 +346,7 @@ where
     }
 }
 
-fn incremental_load<K, V>(g: GenOptions, tx: mpsc::Sender<Cmd<K, V>>)
+fn incremental_load<K, V>(g: GenOptions, tx: Tx<K, V>)
 where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
@@ -355,7 +377,7 @@ where
         } else {
             unreachable!();
         };
-        tx.send(cmd).unwrap();
+        tx.post(cmd).unwrap();
         total = gets + ranges + reverses + sets + dels;
     }
 
