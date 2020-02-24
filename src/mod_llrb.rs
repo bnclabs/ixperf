@@ -19,6 +19,7 @@ pub fn do_llrb_index(name: &str, p: Profile) -> Result<(), String> {
         ("array", "array") => Ok(perf::<[u8; 20], [u8; 20]>(name, p)),
         ("array", "bytes") => Ok(perf::<[u8; 20], Vec<u8>>(name, p)),
         ("bytes", "bytes") => Ok(perf::<Vec<u8>, Vec<u8>>(name, p)),
+        ("bytes", "i64") => Ok(perf::<Vec<u8>, i64>(name, p)),
         _ => Err(format!(
             "unsupported key/value types {}/{}",
             p.key_type, p.val_type
