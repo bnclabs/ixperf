@@ -15,7 +15,7 @@ use crate::generator::{Cmd, IncrementalLoad, IncrementalRead, IncrementalWrite};
 use crate::stats;
 use crate::Profile;
 
-const LMDB_BATCH: usize = 100_000;
+const LMDB_BATCH: usize = 1_000;
 
 #[derive(Default, Clone)]
 pub struct LmdbOpt {
@@ -419,7 +419,6 @@ fn init_lmdb(p: &Profile, name: &str) -> (lmdb::Environment, lmdb::Database) {
     let env = lmdb::Environment::new()
         .set_flags(flags)
         .set_map_size(10_000_000_000)
-        .set_max_readers(p.lmdb.readers as u32)
         .open(&path)
         .unwrap();
 
@@ -436,12 +435,14 @@ fn open_lmdb(p: &Profile, name: &str) -> (lmdb::Environment, lmdb::Database) {
     flags.insert(lmdb::EnvironmentFlags::NO_SYNC);
     flags.insert(lmdb::EnvironmentFlags::NO_META_SYNC);
     flags.insert(lmdb::EnvironmentFlags::NO_TLS);
-    let env = lmdb::Environment::new()
-        .set_flags(flags)
-        .set_map_size(10_000_000_000)
-        .set_max_readers(p.lmdb.readers as u32)
-        .open(&path)
-        .unwrap();
+    let env = {
+        let mut env = lmdb::Environment::new();
+        env.set_flags(flags).set_map_size(10_000_000_000);
+        if p.lmdb.readers > 0 {
+            env.set_max_readers(p.lmdb.readers as u32);
+        }
+        env.open(&path).unwrap()
+    };
 
     let db = env.open_db(None).unwrap();
 

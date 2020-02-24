@@ -9,14 +9,15 @@ key_type = "array"
 value_type = "bytes"
 
 [generator]
+
+# Seed for randomization.
+seed = 0
+
 # Block size if key-type is vector-of-bytes.
 key_size = 20
 
 # Block size if key-type is vector-of-bytes.
-value_size = 400
-
-# Seed for randomization.
-seed = 0
+value_size = 64
 
 # Total number of initial load operations.
 loads = 1_000_000
@@ -41,6 +42,11 @@ iters = true
 
 # channel size to use between generator thread and loader thread.
 channel_size = 100_000
+
+[lmdb]
+name = "lmdb-ixperf"
+readers = 0
+writers = 1
 
 [rdms]
 name = "rdms-ixperf"

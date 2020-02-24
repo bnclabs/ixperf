@@ -14,6 +14,7 @@ use std::{
     convert::{TryFrom, TryInto},
     ffi, fs,
     io::Write,
+    path,
 };
 
 mod generator;
@@ -192,6 +193,13 @@ impl TryFrom<toml::Value> for Profile {
                 _ => return Err(format!("invalid option {}", name)),
             }
         }
+
+        p.path = {
+            let mut pp = path::PathBuf::new();
+            pp.push(".");
+            pp.push("lmdb_data");
+            pp.into_os_string()
+        };
 
         p.g = {
             let mut g: generator::GenOptions = TryFrom::try_from(value.clone())?;
