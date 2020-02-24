@@ -10,14 +10,14 @@ value_type = "i64"
 
 [generator]
 
+# Seed for randomization.
+seed = 0
+
 # Block size if key-type is vector-of-bytes.
 key_size = 64
 
 # Block size if key-type is vector-of-bytes.
 value_size = 64
-
-# Seed for randomization.
-seed = 0
 
 # Total number of initial load operations.
 loads = 1_000_000
@@ -28,19 +28,22 @@ sets = 0
 # Total number of incremental delete operations.
 deletes = 0
 
-# Total number of get operations.
+# Total number of get operations, applied after the initial load.
 gets = 0
 
-# Total number of range iterations between a lower bound and upper bound.
+# Total number of range iterations between a lower bound and upper bound,
+# applied after the initial load.
 ranges = 0
 
-# Total number of reverse iterations between an upper bound and lower bound.
+# Total number of reverse iterations between an upper bound and lower bound,
+# applied after the initial load.
 reverses = 0
 
 # Benchmark a full table scan.
 iters = false
 
-# channel size to use between generator thread and loader thread.
+# channel size to use between generator thread and loader thread. If
+# channel size is <= ZERO, then index-ops shall be created asynchronously.
 channel_size = 100_000
 
 [rdms]
