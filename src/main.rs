@@ -24,10 +24,6 @@ use rand::random;
 use structopt::StructOpt;
 use toml;
 
-// TODO: try valgrid after injecting a memory leak in mvcc.
-// TODO: check for unreachable!() and panic!() macros and make it more
-// user friendly.
-
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
