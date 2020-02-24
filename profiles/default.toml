@@ -46,6 +46,11 @@ iters = false
 # channel size is <= ZERO, then index-ops shall be created asynchronously.
 channel_size = 100_000
 
+[lmdb]
+name = "lmdb-ixperf"
+readers = 0
+writers = 1
+
 [rdms]
 name = "rdms-ixperf"
 index = "shllrb"

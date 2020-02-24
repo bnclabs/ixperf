@@ -20,9 +20,9 @@ mod generator;
 mod latency;
 mod mod_btree_map;
 mod mod_llrb;
+mod mod_lmdb;
 mod mod_rdms;
 mod plot;
-// TODO mod mod_lmdb;
 mod stats;
 mod utils;
 
@@ -142,6 +142,7 @@ fn do_main() -> Result<(), String> {
         "llrb-index" => mod_llrb::do_llrb_index("ixperf", p),
         "btree-map" => mod_btree_map::do_btree_map("ixperf", p),
         "rdms" => mod_rdms::do_rdms_index(p),
+        "lmdb" => mod_lmdb::perf(p),
         _ => Err(format!("unsupported index-type {}", p.index)),
     };
     match res {
@@ -157,7 +158,6 @@ fn do_main() -> Result<(), String> {
     Ok(())
 }
 
-//
 #[derive(Clone, Default)]
 pub struct Profile {
     pub path: ffi::OsString,
@@ -171,6 +171,7 @@ pub struct Profile {
     pub value_footprint: usize,
 
     pub g: generator::GenOptions,
+    pub lmdb: mod_lmdb::LmdbOpt,
     pub rdms: mod_rdms::RdmsOpt,
     pub rdms_llrb: mod_rdms::LlrbOpt,
     pub rdms_mvcc: mod_rdms::MvccOpt,
@@ -191,14 +192,19 @@ impl TryFrom<toml::Value> for Profile {
                 _ => return Err(format!("invalid option {}", name)),
             }
         }
-        p.rdms = TryFrom::try_from(value.clone())
-            .ok()
-            .unwrap_or(Default::default());
+
         p.g = {
             let mut g: generator::GenOptions = TryFrom::try_from(value.clone())?;
             g.initial = p.rdms.initial;
             g
         };
+
+        p.lmdb = TryFrom::try_from(value.clone())
+            .ok()
+            .unwrap_or(Default::default());
+        p.rdms = TryFrom::try_from(value.clone())
+            .ok()
+            .unwrap_or(Default::default());
         p.rdms_llrb = TryFrom::try_from(value.clone())
             .ok()
             .unwrap_or(Default::default());

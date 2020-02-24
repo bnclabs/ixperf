@@ -1,184 +1,250 @@
-use std::io;
-use std::ops::Bound;
-use std::sync::{mpsc, Arc};
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, SystemTime};
-
 use lmdb::{self, Cursor, Transaction};
+use log::info;
 
-use crate::generator::{init_generators, read_generator, write_generator};
-use crate::opts::{Cmd, Opt};
+use std::{
+    convert::{TryFrom, TryInto},
+    io,
+    ops::Bound,
+    sync::Arc,
+    thread,
+    time::{Duration, SystemTime},
+};
+
+use crate::generator::InitialLoad;
+use crate::generator::{Cmd, IncrementalLoad, IncrementalRead, IncrementalWrite};
 use crate::stats;
+use crate::Profile;
 
 const LMDB_BATCH: usize = 100_000;
 
-pub fn perf(opt: Opt) {
-    println!("\n==== INITIAL LOAD ====");
-    let (opt1, opt2) = (opt.clone(), opt.clone());
-
-    let (tx, rx) = mpsc::sync_channel(1000);
-
-    let generator = thread::spawn(move || init_generators(opt1, tx));
-    let dur = do_initial(opt2, rx);
-    generator.join().unwrap();
-
-    let (env, db) = open_lmdb(&opt, "lmdb");
-
-    let entries = env.stat().unwrap().entries();
-    println!("loaded {} items in {:?}", entries, dur);
-
-    println!("\n==== INCREMENTAL LOAD ====");
-    let mut arc_env = Arc::new(env);
-
-    // incremental writer
-    let mut threads: Vec<JoinHandle<()>> = vec![];
-    let (tx, rx) = mpsc::sync_channel(1000);
-    let (opt1, opt2) = (opt.clone(), opt.clone());
-    let w_env = Arc::clone(&arc_env);
-    let g = thread::spawn(move || write_generator(opt1, tx));
-    let w = thread::spawn(move || do_writer(opt2, w_env, db, rx));
-    threads.push(g);
-    threads.push(w);
-
-    // incremental reader
-    for i in 0..opt.readers {
-        let (tx, rx) = mpsc::sync_channel(1000);
-        let (opt1, opt2) = (opt.clone(), opt.clone());
-        let r_env = Arc::clone(&arc_env);
-        let g = thread::spawn(move || read_generator(i, opt1, tx));
-        let r = thread::spawn(move || do_reader(i, opt2, r_env, db, rx));
-        threads.push(g);
-        threads.push(r);
-    }
-
-    for t in threads.into_iter() {
-        t.join().unwrap();
-    }
-
-    unsafe { Arc::get_mut(&mut arc_env).unwrap().close_db(db) };
+#[derive(Default, Clone)]
+pub struct LmdbOpt {
+    pub name: String,
+    pub readers: usize,
+    pub writers: usize,
 }
 
-fn do_initial(opt: Opt, rx: mpsc::Receiver<Cmd>) -> Duration {
-    let mut op_stats = stats::Ops::new();
-    let start = SystemTime::now();
+impl LmdbOpt {
+    fn concur_threads(&self) -> usize {
+        self.readers + self.writers
+    }
+}
 
-    let (mut env, db) = init_lmdb(&opt, "lmdb");
+impl TryFrom<toml::Value> for LmdbOpt {
+    type Error = String;
 
-    let mut value: Vec<u8> = Vec::with_capacity(opt.valsize);
-    value.resize(opt.valsize, 0xAD);
+    fn try_from(value: toml::Value) -> Result<Self, Self::Error> {
+        let mut lmdb_opt: LmdbOpt = Default::default();
 
-    let write_flags: lmdb::WriteFlags = Default::default();
-    let mut opcount = 0;
-
-    {
-        let mut txn = env.begin_rw_txn().unwrap();
-        for cmd in rx {
-            opcount += 1;
-            match cmd {
-                Cmd::Load { key } => {
-                    op_stats.load.latency.start();
-                    txn.put(db, &key, &value, write_flags.clone()).unwrap();
-                    op_stats.load.latency.stop();
-                    op_stats.load.count += 1;
+        let section = match &value.get("lmdb") {
+            None => return Err("not found".to_string()),
+            Some(section) => section.clone(),
+        };
+        for (name, value) in section.as_table().unwrap().iter() {
+            match name.as_str() {
+                "name" => lmdb_opt.name = value.as_str().unwrap().to_string(),
+                "readers" => {
+                    let v = value.as_integer().unwrap();
+                    lmdb_opt.readers = v.try_into().unwrap();
                 }
-                _ => unreachable!(),
-            };
-            if (opcount % LMDB_BATCH) == 0 {
-                txn.commit().unwrap();
-                txn = env.begin_rw_txn().unwrap();
+                "writers" => {
+                    let v = value.as_integer().unwrap();
+                    lmdb_opt.writers = v.try_into().unwrap();
+                }
+                _ => panic!("invalid profile parameter {}", name),
             }
-            if (opcount % crate::LOG_BATCH) == 0 {
-                opt.periodic_log(&op_stats, false /*fin*/)
+        }
+
+        Ok(lmdb_opt)
+    }
+}
+
+pub fn perf(p: Profile) -> Result<(), String> {
+    let mut fstats = {
+        let (env, db) = init_lmdb(&p, "lmdb");
+        let start = SystemTime::now();
+        let fstats = do_initial(&p, env, db);
+        let elapsed = {
+            let elapsed = start.elapsed().unwrap().as_nanos() as u64;
+            Duration::from_nanos(elapsed)
+        };
+        let stat = {
+            let (env, _) = open_lmdb(&p, "lmdb");
+            env.stat().unwrap()
+        };
+        info!(
+            target: "ixperf",
+            "initial-load completed {} items in {:?}", stat.entries(), elapsed
+        );
+
+        fstats
+    };
+
+    let (iter_dur, iter_count) = if p.g.iters {
+        let (env, db) = open_lmdb(&p, "lmdb");
+        let start = SystemTime::now();
+        let mut iter_count = 0;
+
+        let txn = env.begin_ro_txn().unwrap();
+        let iter = txn.open_ro_cursor(db).unwrap().iter();
+        for _ in iter {
+            iter_count += 1;
+        }
+        let elapsed = {
+            let elapsed = start.elapsed().unwrap().as_nanos() as u64;
+            Duration::from_nanos(elapsed)
+        };
+        (elapsed, iter_count)
+    } else {
+        (Duration::from_nanos(0), 0)
+    };
+
+    let total_ops = p.g.read_ops() + p.g.write_ops();
+    let (_, mut env, db) = if p.lmdb.concur_threads() == 0 && total_ops > 0 {
+        let (env, db) = open_lmdb(&p, "lmdb");
+
+        fstats.merge(&do_incremental(&p, env, db));
+
+        let (env, db) = open_lmdb(&p, "lmdb");
+        (fstats, Arc::new(env), db)
+    } else if total_ops > 0 {
+        let (env, db) = open_lmdb(&p, "lmdb");
+        let env = Arc::new(env);
+
+        let mut threads = vec![];
+        for i in 0..p.lmdb.writers {
+            let pp = p.clone();
+            let envv = Arc::clone(&env);
+            threads.push(thread::spawn(move || do_write(i, pp, envv, db)));
+        }
+        for i in 0..p.lmdb.readers {
+            let pp = p.clone();
+            let envv = Arc::clone(&env);
+            threads.push(thread::spawn(move || do_read(i, pp, envv, db)));
+        }
+        for t in threads {
+            fstats.merge(&t.join().unwrap());
+        }
+        (fstats, env, db)
+    } else {
+        let (env, db) = open_lmdb(&p, "lmdb");
+        (fstats, Arc::new(env), db)
+    };
+
+    unsafe { Arc::get_mut(&mut env).unwrap().close_db(db) };
+    env.sync(true).unwrap();
+
+    if p.g.iters {
+        info!(
+            target: "ixperf",
+            "lmdb took {:?} to iter over {} items", iter_dur, iter_count
+        );
+    }
+
+    Ok(())
+}
+
+fn do_initial(
+    p: &Profile,
+    mut env: lmdb::Environment,
+    db: lmdb::Database, // index
+) -> stats::Ops {
+    if p.g.loads == 0 {
+        return stats::Ops::new();
+    }
+
+    info!(
+        target: "ixperf",
+        "intial load for type <{},{}>", p.key_type, p.val_type
+    );
+
+    let mut txn = env.begin_rw_txn().unwrap();
+    let write_flags: lmdb::WriteFlags = Default::default();
+    let mut load_count = 0;
+
+    let mut fstats = stats::Ops::new();
+    let mut lstats = stats::Ops::new();
+    let gen = InitialLoad::<Vec<u8>, Vec<u8>>::new(p.g.clone());
+    for (_i, cmd) in gen.enumerate() {
+        match cmd {
+            Cmd::Load { key, value } => {
+                lstats.load.sample_start(false);
+                txn.put(db, &key, &value, write_flags.clone()).unwrap();
+                lstats.load.sample_end(0);
+                load_count += 1;
             }
+            _ => unreachable!(),
+        };
+        if (load_count % LMDB_BATCH) == 0 {
+            txn.commit().unwrap();
+            txn = env.begin_rw_txn().unwrap();
+        }
+        if p.verbose && lstats.is_sec_elapsed() {
+            info!(target: "ixperf", "initial periodic-stats\n{}", lstats);
+            fstats.merge(&lstats);
+            lstats = stats::Ops::new();
         }
     }
 
-    let dur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
+    txn.commit().unwrap();
 
+    fstats.merge(&lstats);
     unsafe { env.close_db(db) };
     env.sync(true).unwrap();
-    opt.periodic_log(&op_stats, true /*fin*/);
 
-    dur
+    info!(target: "ixperf", "initial stats\n{:?}\n", fstats);
+
+    fstats
 }
 
-fn do_writer(opt: Opt, env: Arc<lmdb::Environment>, db: lmdb::Database, rx: mpsc::Receiver<Cmd>) {
-    let mut op_stats = stats::Ops::new();
-    let mut value: Vec<u8> = Vec::with_capacity(opt.valsize);
-    value.resize(opt.valsize, 0xAD);
-    let mut opcount = 0;
+fn do_incremental(
+    p: &Profile,
+    env: lmdb::Environment,
+    db: lmdb::Database, // lmdb index
+) -> stats::Ops {
+    if (p.g.read_ops() + p.g.write_ops()) == 0 {
+        return stats::Ops::new();
+    }
+
+    info!(
+        target: "ixperf",
+        "incremental load for type <{},{}>", p.key_type, p.val_type
+    );
+
     let write_flags: lmdb::WriteFlags = Default::default();
 
-    //let (mut env, db) = open_lmdb(&opt, "lmdb");
-
-    let start = SystemTime::now();
-    for cmd in rx {
-        opcount += 1;
+    let mut fstats = stats::Ops::new();
+    let mut lstats = stats::Ops::new();
+    let gen = IncrementalLoad::<Vec<u8>, Vec<u8>>::new(p.g.clone());
+    for (_i, cmd) in gen.enumerate() {
         match cmd {
-            Cmd::Set { key } => {
-                op_stats.set.latency.start();
+            Cmd::Set { key, value } => {
+                lstats.set.sample_start(false);
                 let mut txn = env.begin_rw_txn().unwrap();
                 txn.put(db, &key, &value, write_flags.clone()).unwrap();
                 txn.commit().unwrap();
-                op_stats.set.latency.stop();
-                op_stats.set.count += 1;
+                lstats.set.sample_end(0);
             }
             Cmd::Delete { key } => {
-                op_stats.delete.latency.start();
+                lstats.delete.sample_start(false);
                 let mut txn = env.begin_rw_txn().unwrap();
-                match txn.del(db, &key, None /*data*/) {
-                    Ok(_) | Err(lmdb::Error::NotFound) => {
-                        op_stats.delete.items += 1;
-                    }
+                let n = match txn.del(db, &key, None /*data*/) {
+                    Ok(_) => 0,
+                    Err(lmdb::Error::NotFound) => 1,
                     res @ _ => panic!("lmdb del: {:?}", res),
-                }
+                };
                 txn.commit().unwrap();
-                op_stats.delete.latency.stop();
-                op_stats.delete.count += 1;
+                lstats.delete.sample_end(n);
             }
-            _ => (),
-        };
-        if (opcount % crate::LOG_BATCH) == 0 {
-            opt.periodic_log(&op_stats, false /*fin*/)
-        }
-    }
-
-    let entries = env.stat().unwrap().entries();
-    let (elapsed, len) = (start.elapsed().unwrap(), entries);
-    let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
-    println!("writer ops {} in {:?}, index-len: {}", opcount, dur, len);
-
-    //unsafe { env.close_db(db) };
-
-    opt.periodic_log(&op_stats, true /*fin*/)
-}
-
-fn do_reader(
-    n: usize,
-    opt: Opt,
-    env: Arc<lmdb::Environment>,
-    db: lmdb::Database,
-    rx: mpsc::Receiver<Cmd>,
-) {
-    let mut op_stats = stats::Ops::new();
-    let mut opcount = 0;
-
-    //let (mut env, db) = open_lmdb(&opt, "lmdb");
-
-    let start = SystemTime::now();
-    for cmd in rx {
-        opcount += 1;
-        match cmd {
             Cmd::Get { key } => {
-                op_stats.get.latency.start();
+                lstats.get.sample_start(false);
                 let txn = env.begin_ro_txn().unwrap();
-                match txn.get(db, &key) {
-                    Ok(_) => (),
-                    Err(lmdb::Error::NotFound) => op_stats.get.items += 1,
+                let n = match txn.get(db, &key) {
+                    Ok(_) => 0,
+                    Err(lmdb::Error::NotFound) => 1,
                     Err(err) => panic!(err),
-                }
-                op_stats.get.latency.stop();
-                op_stats.get.count += 1;
+                };
+                lstats.get.sample_end(n);
             }
             Cmd::Range { low, high } => {
                 let txn = env.begin_ro_txn().unwrap();
@@ -189,47 +255,161 @@ fn do_reader(
                     _ => cur.iter(),
                 };
 
-                op_stats.range.latency.start();
-                for (key, _value) in iter {
+                let mut iter_count = 0;
+                for (key, _) in iter {
                     match high {
-                        Bound::Included(ref high) if key > high => break,
-                        Bound::Excluded(ref high) if key >= high => break,
-                        _ => (),
-                    }
-                    op_stats.range.items += 1;
+                        Bound::Included(h) if key.gt(&h) => break,
+                        Bound::Excluded(h) if key.ge(&h) => break,
+                        _ => iter_count += 1,
+                    };
                 }
-                op_stats.range.latency.stop();
-                op_stats.range.count += 1;
+
+                lstats.range.sample_start(true);
+                lstats.range.sample_end(iter_count);
             }
-            Cmd::Reverse { low: _, high: _ } => (),
+            Cmd::Reverse { .. } => (),
             _ => unreachable!(),
         };
-        if (opcount % crate::LOG_BATCH) == 0 {
-            opt.periodic_log(&op_stats, false /*fin*/)
+        if p.verbose && lstats.is_sec_elapsed() {
+            info!(target: "ixperf", "incremental periodic-stats\n{}", lstats);
+            fstats.merge(&lstats);
+            lstats = stats::Ops::new();
         }
     }
 
-    let entries = env.stat().unwrap().entries();
-    let (elapsed, len) = (start.elapsed().unwrap(), entries);
-    let dur = Duration::from_nanos(elapsed.as_nanos() as u64);
-    println!(
-        "reader{} ops {} in {:?}, index-len: {}",
-        n, opcount, dur, len
-    );
+    fstats.merge(&lstats);
 
-    //unsafe { env.close_db(db) };
+    info!(target: "ixperf", "incremental stats\n{:?}\n", fstats);
 
-    opt.periodic_log(&op_stats, true /*fin*/);
+    fstats
 }
 
-fn init_lmdb(opt: &Opt, name: &str) -> (lmdb::Environment, lmdb::Database) {
+fn do_write(
+    i: usize,
+    p: Profile,
+    env: Arc<lmdb::Environment>,
+    db: lmdb::Database, // index
+) -> stats::Ops {
+    if p.g.write_ops() == 0 {
+        return stats::Ops::new();
+    }
+
+    info!(target: "ixperf", "writer-{} type <{},{}>", i, p.key_type, p.val_type);
+
+    let write_flags: lmdb::WriteFlags = Default::default();
+
+    let mut fstats = stats::Ops::new();
+    let mut lstats = stats::Ops::new();
+    let gen = IncrementalWrite::<Vec<u8>, Vec<u8>>::new(p.g.clone());
+    for (_i, cmd) in gen.enumerate() {
+        match cmd {
+            Cmd::Set { key, value } => {
+                lstats.set.sample_start(false);
+                let mut txn = env.begin_rw_txn().unwrap();
+                txn.put(db, &key, &value, write_flags.clone()).unwrap();
+                txn.commit().unwrap();
+                lstats.set.sample_end(0);
+            }
+            Cmd::Delete { key } => {
+                lstats.delete.sample_start(false);
+                let mut txn = env.begin_rw_txn().unwrap();
+                let n = match txn.del(db, &key, None /*data*/) {
+                    Ok(_) => 0,
+                    Err(lmdb::Error::NotFound) => 1,
+                    res @ _ => panic!("lmdb del: {:?}", res),
+                };
+                txn.commit().unwrap();
+                lstats.delete.sample_end(n);
+            }
+            _ => unreachable!(),
+        };
+        if p.verbose && lstats.is_sec_elapsed() {
+            info!(target: "ixperf", "writer-{} periodic-stats\n{}", i, lstats);
+            fstats.merge(&lstats);
+            lstats = stats::Ops::new();
+        }
+    }
+
+    fstats.merge(&lstats);
+
+    info!(target: "ixperf", "writer-{} stats\n{:?}\n", i, fstats);
+
+    fstats
+}
+
+fn do_read(
+    i: usize,
+    p: Profile,
+    env: Arc<lmdb::Environment>,
+    db: lmdb::Database, // index handle
+) -> stats::Ops {
+    if p.g.read_ops() == 0 {
+        return stats::Ops::new();
+    }
+
+    info!(target: "ixperf", "reader-{} type <{},{}>", i, p.key_type, p.val_type);
+
+    let mut fstats = stats::Ops::new();
+    let mut lstats = stats::Ops::new();
+    let gen = IncrementalRead::<Vec<u8>, Vec<u8>>::new(p.g.clone());
+    for (_i, cmd) in gen.enumerate() {
+        match cmd {
+            Cmd::Get { key } => {
+                lstats.get.sample_start(false);
+                let txn = env.begin_ro_txn().unwrap();
+                let n = match txn.get(db, &key) {
+                    Ok(_) => 0,
+                    Err(lmdb::Error::NotFound) => 1,
+                    Err(err) => panic!(err),
+                };
+                lstats.get.sample_end(n);
+            }
+            Cmd::Range { low, high } => {
+                let txn = env.begin_ro_txn().unwrap();
+                let mut cur = txn.open_ro_cursor(db).unwrap();
+                let iter = match low {
+                    Bound::Included(low) => cur.iter_from(low.clone()),
+                    Bound::Excluded(low) => cur.iter_from(low.clone()),
+                    _ => cur.iter(),
+                };
+
+                let mut iter_count = 0;
+                for (key, _) in iter {
+                    match high {
+                        Bound::Included(h) if key.gt(&h) => break,
+                        Bound::Excluded(h) if key.ge(&h) => break,
+                        _ => iter_count += 1,
+                    };
+                }
+
+                lstats.range.sample_start(true);
+                lstats.range.sample_end(iter_count);
+            }
+            Cmd::Reverse { .. } => (),
+            _ => unreachable!(),
+        };
+        if p.verbose && lstats.is_sec_elapsed() {
+            info!(target: "ixperf", "reader-{} periodic-stats\n{}", i, lstats);
+            fstats.merge(&lstats);
+            lstats = stats::Ops::new();
+        }
+    }
+
+    fstats.merge(&lstats);
+
+    info!(target: "ixperf", "reader-{} stats\n{:?}\n", i, fstats);
+
+    fstats
+}
+
+fn init_lmdb(p: &Profile, name: &str) -> (lmdb::Environment, lmdb::Database) {
     // setup directory
-    match std::fs::remove_dir_all(&opt.path) {
+    match std::fs::remove_dir_all(&p.path) {
         Ok(()) => (),
         Err(ref err) if err.kind() == io::ErrorKind::NotFound => (),
         Err(err) => panic!("{:?}", err),
     }
-    let path = std::path::Path::new(&opt.path).join(name);
+    let path = std::path::Path::new(&p.path).join(name);
     std::fs::create_dir_all(&path).unwrap();
 
     // create the environment
@@ -239,7 +419,7 @@ fn init_lmdb(opt: &Opt, name: &str) -> (lmdb::Environment, lmdb::Database) {
     let env = lmdb::Environment::new()
         .set_flags(flags)
         .set_map_size(10_000_000_000)
-        .set_max_readers(opt.readers as u32)
+        .set_max_readers(p.lmdb.readers as u32)
         .open(&path)
         .unwrap();
 
@@ -248,8 +428,8 @@ fn init_lmdb(opt: &Opt, name: &str) -> (lmdb::Environment, lmdb::Database) {
     (env, db)
 }
 
-fn open_lmdb(opt: &Opt, name: &str) -> (lmdb::Environment, lmdb::Database) {
-    let path = std::path::Path::new(&opt.path).join(name);
+fn open_lmdb(p: &Profile, name: &str) -> (lmdb::Environment, lmdb::Database) {
+    let path = std::path::Path::new(&p.path).join(name);
 
     // create the environment
     let mut flags = lmdb::EnvironmentFlags::empty();
@@ -259,7 +439,7 @@ fn open_lmdb(opt: &Opt, name: &str) -> (lmdb::Environment, lmdb::Database) {
     let env = lmdb::Environment::new()
         .set_flags(flags)
         .set_map_size(10_000_000_000)
-        .set_max_readers(opt.readers as u32)
+        .set_max_readers(p.lmdb.readers as u32)
         .open(&path)
         .unwrap();
 
