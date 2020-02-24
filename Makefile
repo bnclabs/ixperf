@@ -1,4 +1,5 @@
 clean:
-	rm -f data/*
-	rm -f plot/*
+	rm -rf data
+	rm -rf lmdb_data
+	rm -rf plot
 	rm -f ixperf.log

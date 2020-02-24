@@ -3,8 +3,9 @@ use log::info;
 
 use std::{
     convert::{TryFrom, TryInto},
-    io,
+    ffi, io,
     ops::Bound,
+    path,
     sync::Arc,
     thread,
     time::{Duration, SystemTime},
@@ -15,11 +16,12 @@ use crate::generator::{Cmd, IncrementalLoad, IncrementalRead, IncrementalWrite};
 use crate::stats;
 use crate::Profile;
 
-const LMDB_BATCH: usize = 1_000;
+const LMDB_BATCH: usize = 100_000;
 
 #[derive(Default, Clone)]
 pub struct LmdbOpt {
     pub name: String,
+    pub dir: String,
     pub readers: usize,
     pub writers: usize,
 }
@@ -43,6 +45,7 @@ impl TryFrom<toml::Value> for LmdbOpt {
         for (name, value) in section.as_table().unwrap().iter() {
             match name.as_str() {
                 "name" => lmdb_opt.name = value.as_str().unwrap().to_string(),
+                "dir" => lmdb_opt.dir = value.as_str().unwrap().to_string(),
                 "readers" => {
                     let v = value.as_integer().unwrap();
                     lmdb_opt.readers = v.try_into().unwrap();
@@ -54,6 +57,16 @@ impl TryFrom<toml::Value> for LmdbOpt {
                 _ => panic!("invalid profile parameter {}", name),
             }
         }
+
+        lmdb_opt.dir = if lmdb_opt.dir.len() == 0 {
+            let mut pp = path::PathBuf::new();
+            pp.push(".");
+            pp.push("lmdb_data");
+            let dir: &ffi::OsStr = pp.as_ref();
+            dir.to_str().unwrap().to_string()
+        } else {
+            lmdb_opt.dir
+        };
 
         Ok(lmdb_opt)
     }
@@ -404,12 +417,12 @@ fn do_read(
 
 fn init_lmdb(p: &Profile, name: &str) -> (lmdb::Environment, lmdb::Database) {
     // setup directory
-    match std::fs::remove_dir_all(&p.path) {
+    match std::fs::remove_dir_all(&p.lmdb.dir) {
         Ok(()) => (),
         Err(ref err) if err.kind() == io::ErrorKind::NotFound => (),
         Err(err) => panic!("{:?}", err),
     }
-    let path = std::path::Path::new(&p.path).join(name);
+    let path = std::path::Path::new(&p.lmdb.dir).join(name);
     std::fs::create_dir_all(&path).unwrap();
 
     // create the environment
@@ -428,7 +441,7 @@ fn init_lmdb(p: &Profile, name: &str) -> (lmdb::Environment, lmdb::Database) {
 }
 
 fn open_lmdb(p: &Profile, name: &str) -> (lmdb::Environment, lmdb::Database) {
-    let path = std::path::Path::new(&p.path).join(name);
+    let path = std::path::Path::new(&p.lmdb.dir).join(name);
 
     // create the environment
     let mut flags = lmdb::EnvironmentFlags::empty();

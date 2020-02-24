@@ -50,6 +50,7 @@ channel_size = 0
 name = "lmdb-ixperf"
 readers = 0
 writers = 1
+load_batch = 100_000
 
 [rdms]
 name = "rdms-ixperf"

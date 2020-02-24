@@ -12,7 +12,7 @@ edition = "2018"
 structopt = { version = "0.2", default-features = false }
 toml = "0.5.3"
 rand = "0.6.4"
-log = { version = "0.4.8", features = ["max_level_debug", "release_max_level_warn"] }
+log = { version = "0.4.8", features = ["max_level_debug", "release_max_level_debug"] }
 
 env_logger = "0.7.1"
 im="12.3.0"
