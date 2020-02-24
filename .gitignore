@@ -8,3 +8,4 @@ Cargo.lock
 ixperf.log
 plot/**
 data/**
+lmdb_data/**
