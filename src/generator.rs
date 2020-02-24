@@ -1,3 +1,7 @@
+use log::info;
+use rand::{rngs::SmallRng, Rng, SeedableRng};
+use toml;
+
 use std::{
     convert::TryFrom,
     mem,
@@ -7,11 +11,31 @@ use std::{
     time::SystemTime,
 };
 
-use log::info;
-use rand::{rngs::SmallRng, Rng, SeedableRng};
-use toml;
-
 use crate::utils;
+
+enum Tx<K, V>
+where
+    K: 'static + Clone + Default + Send + Sync + RandomKV,
+    V: 'static + Clone + Default + Send + Sync + RandomKV,
+{
+    N(mpsc::Sender<Cmd<K, V>>),
+    S(mpsc::SyncSender<Cmd<K, V>>),
+}
+
+impl<K, V> Tx<K, V>
+where
+    K: 'static + Clone + Default + Send + Sync + RandomKV,
+    V: 'static + Clone + Default + Send + Sync + RandomKV,
+{
+    fn post(&self, msg: Cmd<K, V>) -> Result<(), String> {
+        match self {
+            Tx::N(tx) => tx.send(msg).map_err(|e| format!("{:?}", e))?,
+            Tx::S(tx) => tx.send(msg).map_err(|e| format!("{:?}", e))?,
+        }
+
+        Ok(())
+    }
+}
 
 #[derive(Default, Clone)]
 pub struct GenOptions {
@@ -88,7 +112,13 @@ where
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
     pub fn new(g: GenOptions) -> InitialLoad<K, V> {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = if g.channel_size > 0 {
+            let (tx, rx) = mpsc::sync_channel(g.channel_size);
+            (Tx::S(tx), rx)
+        } else {
+            let (tx, rx) = mpsc::channel();
+            (Tx::N(tx), rx)
+        };
         let _thread = { thread::spawn(move || initial_load(g, tx)) };
         InitialLoad { _thread, rx }
     }
@@ -106,7 +136,7 @@ where
     }
 }
 
-fn initial_load<K, V>(g: GenOptions, tx: mpsc::Sender<Cmd<K, V>>)
+fn initial_load<K, V>(g: GenOptions, tx: Tx<K, V>)
 where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
@@ -115,7 +145,7 @@ where
     let mut rng = SmallRng::from_seed(g.seed.to_le_bytes());
 
     for _i in 0..g.loads {
-        tx.send(Cmd::gen_load(&mut rng, &g)).unwrap();
+        tx.post(Cmd::gen_load(&mut rng, &g)).unwrap();
     }
 
     let elapsed = start.elapsed().unwrap();
