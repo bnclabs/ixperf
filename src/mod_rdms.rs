@@ -435,7 +435,7 @@ where
             Llrb::new("load-rbt")
         };
         mem_index.set_sticky(rng.gen::<bool>());
-        mem_index.set_seqno(seqno);
+        mem_index.set_seqno(seqno).unwrap();
         p.g.seed += i as u128 * 100;
         let gen = IncrementalWrite::<K, V>::new(p.g.clone());
         let mut w = mem_index.to_writer().unwrap();

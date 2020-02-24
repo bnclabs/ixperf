@@ -1,5 +1,20 @@
-#![feature(result_map_or_else)]
 #![feature(test)]
+
+#[cfg(feature = "cpuprofile")]
+use cpuprofiler::PROFILER;
+
+use env_logger;
+use jemallocator;
+use log::{self, error, info};
+use rand::random;
+use structopt::StructOpt;
+use toml;
+
+use std::{
+    convert::{TryFrom, TryInto},
+    ffi, fs,
+    io::Write,
+};
 
 mod generator;
 mod latency;
@@ -10,19 +25,6 @@ mod plot;
 // TODO mod mod_lmdb;
 mod stats;
 mod utils;
-
-use std::{
-    convert::{TryFrom, TryInto},
-    ffi,
-    io::Write,
-};
-
-use env_logger;
-use jemallocator;
-use log::{self, error, info};
-use rand::random;
-use structopt::StructOpt;
-use toml;
 
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
@@ -53,7 +55,7 @@ impl TryFrom<Opt> for Profile {
     fn try_from(opt: Opt) -> Result<Profile, String> {
         let mut p: Profile = match opt.profile.as_str() {
             "" => Err(format!("please provide a profile file")),
-            profile => match std::fs::read(profile) {
+            profile => match fs::read(profile) {
                 Ok(text) => {
                     let text = std::str::from_utf8(&text).unwrap();
                     let toml_value = match text.parse::<toml::Value>() {
@@ -107,29 +109,34 @@ fn init_logging() {
 }
 
 fn main() {
+    match do_main() {
+        Ok(_) => (),
+        Err(err) => error!(target: "main  ", "failure: {}", err),
+    }
+}
+
+fn do_main() -> Result<(), String> {
     init_logging();
 
     let opts = Opt::from_args();
     if opts.plot.0.len() > 0 {
-        match plot::do_plot(opts) {
-            Ok(_) => (),
-            Err(err) => error!(target: "main  ", "plot-failed: {}", err),
-        }
-        std::process::exit(1);
+        let opts = Opt::from_args();
+        plot::do_plot(opts)?;
     };
 
-    let p: Profile = match opts.try_into() {
-        Ok(p) => p,
-        Err(err) => {
-            error!(target: "main  ", "invalid args/profile: {}", err);
-            std::process::exit(1);
-        }
-    };
+    let p: Profile = opts.try_into()?;
+
     info!(target: "main  ", "starting with seed = {}", p.g.seed);
 
-    // TODO - enable this via feature gating.
-    // use cpuprofiler::PROFILER;
-    // PROFILER.lock().unwrap().start("./ixperf.prof").unwrap();
+    #[cfg(feature = "cpuprofile")]
+    {
+        let file_name = "./ixperf.prof";
+        {
+            fs::remove_file(file_name).map_err(|e| format!("{:?}", e))?;
+            fs::File::create(file_name).map_err(|e| format!("{:?}", e))?;
+        }
+        PROFILER.lock().unwrap().start(file_name).unwrap();
+    }
 
     let res = match p.index.as_str() {
         "llrb-index" => mod_llrb::do_llrb_index("ixperf", p),
@@ -142,7 +149,12 @@ fn main() {
         _ => (),
     };
 
-    // PROFILER.lock().unwrap().stop().unwrap();
+    #[cfg(feature = "cpuprofile")]
+    {
+        PROFILER.lock().unwrap().stop().unwrap()
+    }
+
+    Ok(())
 }
 
 //
