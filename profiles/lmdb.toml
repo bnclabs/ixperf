@@ -23,13 +23,13 @@ value_size = 400
 loads = 10_000_000
 
 # Total number of incremental set operations.
-sets = 0
+sets = 10_000_000
 
 # Total number of incremental delete operations.
-deletes = 0
+deletes = 1_000_000
 
 # Total number of get operations, applied after the initial load.
-gets = 0
+gets = 10_000_000
 
 # Total number of range iterations between a lower bound and upper bound,
 # applied after the initial load.
@@ -49,6 +49,6 @@ channel_size = 0
 [lmdb]
 name = "lmdb-ixperf"
 dir = ""
-readers = 0
+readers = 8
 writers = 1
 load_batch = 100_000
