@@ -636,7 +636,7 @@ impl StatLine {
         let lat = match self.value.as_table() {
             Some(table) => match table.get(op_name) {
                 Some(table) => match table["latency"]["latencies"].get(p) {
-                    Some(value) => value.as_integer().unwrap(),
+                    Some(value) => Some(value.as_integer().unwrap()),
                     None => {
                         let value = &table["latency"]["latencies"];
                         let table = value.as_table().unwrap();
@@ -645,13 +645,13 @@ impl StatLine {
                             let iter = iter.map(|(_, v)| v.as_integer().unwrap());
                             iter.collect::<Vec<i64>>().iter().sum()
                         };
-                        sum / (table.len() as i64)
+                        Some(sum / (table.len() as i64))
                     }
                 },
-                None => unreachable!(),
+                None => None,
             },
-            None => unreachable!(),
-        };
+            None => None,
+        }?;
 
         Some((self.millis, lat.try_into().unwrap()))
     }

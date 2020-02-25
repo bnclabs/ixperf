@@ -20,16 +20,16 @@ value_size = 400
 seed = 0
 
 # Total number of initial load operations.
-loads = 1_000_000
+loads = 10_000_000
 
 # Total number of incremental set operations.
-sets = 0
+sets = 10_000_000
 
 # Total number of incremental delete operations.
-deletes = 0
+deletes = 1_000_000
 
 # Total number of get operations.
-gets = 0
+gets = 10_000_000
 
 # Total number of range iterations between a lower bound and upper bound.
 ranges = 0
@@ -41,7 +41,7 @@ reverses = 0
 iters = true
 
 # channel size to use between generator thread and loader thread.
-channel_size = 100_000
+channel_size = 0
 
 [llrb-index]
 # no other options other than the [ixperf]
