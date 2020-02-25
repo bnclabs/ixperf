@@ -16,14 +16,13 @@ use crate::generator::{Cmd, IncrementalLoad, IncrementalRead, IncrementalWrite};
 use crate::stats;
 use crate::Profile;
 
-const LMDB_BATCH: usize = 100_000;
-
 #[derive(Default, Clone)]
 pub struct LmdbOpt {
     pub name: String,
     pub dir: String,
     pub readers: usize,
     pub writers: usize,
+    pub load_batch: usize,
 }
 
 impl LmdbOpt {
@@ -53,6 +52,10 @@ impl TryFrom<toml::Value> for LmdbOpt {
                 "writers" => {
                     let v = value.as_integer().unwrap();
                     lmdb_opt.writers = v.try_into().unwrap();
+                }
+                "load_batch" => {
+                    let v = value.as_integer().unwrap();
+                    lmdb_opt.load_batch = v.try_into().unwrap();
                 }
                 _ => panic!("invalid profile parameter {}", name),
             }
@@ -188,7 +191,7 @@ fn do_initial(
             }
             _ => unreachable!(),
         };
-        if (load_count % LMDB_BATCH) == 0 {
+        if (load_count % p.lmdb.load_batch) == 0 {
             txn.commit().unwrap();
             txn = env.begin_rw_txn().unwrap();
         }
