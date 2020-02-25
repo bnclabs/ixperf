@@ -19,6 +19,7 @@ use regex::Regex;
 use crate::Opt;
 
 struct PlotData {
+    title_system: Vec<Vec<StatLine>>,
     title_initial: Vec<Vec<StatLine>>,
     title_incrmnt: Vec<Vec<StatLine>>,
     title_writers: Vec<Vec<StatLine>>,
@@ -36,12 +37,52 @@ impl PlotData {
         fs::remove_dir_all(&path_dir).ok();
         fs::create_dir_all(&path_dir).expect("creating the plot dir");
 
+        self.render_cpu_load(opt, path_dir.clone());
+        self.render_mem_rss(opt, path_dir.clone());
         self.render_load_throughput(opt, path_dir.clone());
         self.render_load_latency(opt, path_dir.clone());
         self.render_incr_throughput(opt, path_dir.clone());
         self.render_incr_latency(opt, path_dir.clone());
         self.render_concur_throughput(opt, path_dir.clone());
         self.render_concur_latency(opt, path_dir.clone());
+    }
+
+    fn render_cpu_load(&self, _opt: &Opt, path_dir: path::PathBuf) {
+        let stats = self.title_system.clone();
+        let x_axis = "Seconds";
+        let y_axis = "CPU utilization / Sec";
+        let file = "cpu-utilization.png";
+        let title = "cpu utilization";
+        let names = vec!["cpu".to_string()];
+
+        let mut vals: Vec<(i64, u64)> = {
+            let iter = stats.iter().flatten().filter_map(|s| s.to_cpu_load());
+            iter.collect()
+        };
+        vals.sort_by(|x, y| x.0.cmp(&y.0));
+
+        let y_values = vec![normalize_to_secs(vals)];
+        let dir = &path_dir.join(file);
+        do_render(dir, title, names, x_axis, y_axis, y_values)
+    }
+
+    fn render_mem_rss(&self, _opt: &Opt, path_dir: path::PathBuf) {
+        let stats = self.title_system.clone();
+        let x_axis = "Seconds";
+        let y_axis = "RSS in MB";
+        let file = "memory-utilization.png";
+        let title = "memory rss utilization";
+        let names = vec!["rss".to_string()];
+
+        let mut vals: Vec<(i64, u64)> = {
+            let iter = stats.iter().flatten().filter_map(|s| s.to_mem_rss());
+            iter.collect()
+        };
+        vals.sort_by(|x, y| x.0.cmp(&y.0));
+
+        let y_values = vec![normalize_to_secs(vals)];
+        let dir = &path_dir.join(file);
+        do_render(dir, title, names, x_axis, y_axis, y_values)
     }
 
     fn render_load_throughput(&self, _opt: &Opt, path_dir: path::PathBuf) {
@@ -87,8 +128,8 @@ impl PlotData {
         let stats = self.title_incrmnt.clone();
         let x_axis = "Seconds";
         let y_axis = "Throughput kilo-ops / Sec";
-        let file = "initial-incremental-throughput.png";
-        let title = "initial-incremental throughput";
+        let file = "incremental-throughput.png";
+        let title = "incremental throughput";
         let names = {
             let names = vec!["set", "delete", "get"];
             names.into_iter().map(|s| s.to_string()).collect()
@@ -114,8 +155,8 @@ impl PlotData {
         let stats = self.title_incrmnt.clone();
         let x_axis = "Seconds";
         let y_axis = "Latency in nS";
-        let file = "initial-incremental-latency.png";
-        let title = format!("initial-load latency {} percentile", p);
+        let file = "incremental-latency.png";
+        let title = format!("incremental latency {} percentile", p);
         let names = {
             let names = vec!["set", "delete", "get"];
             names.into_iter().map(|s| s.to_string()).collect()
@@ -142,8 +183,8 @@ impl PlotData {
     fn render_concur_throughput(&self, _opt: &Opt, path_dir: path::PathBuf) {
         let x_axis = "Seconds";
         let y_axis = "Throughput kilo-ops / Sec";
-        let file = "initial-concurrent-throughput.png";
-        let title = "initial-concurrent throughput";
+        let file = "concurrent-throughput.png";
+        let title = "concurrent throughput";
 
         let (mut names, mut y_values) = {
             let stats = self.title_writers.clone();
@@ -198,8 +239,8 @@ impl PlotData {
         let p = opt.percentile.as_str();
         let x_axis = "Seconds";
         let y_axis = "Latency in nS";
-        let file = "initial-concurrent-latency.png";
-        let title = format!("initial-load latency {} percentile", p);
+        let file = "concurrent-latency.png";
+        let title = format!("concurrent latency {} percentile", p);
 
         let (mut names, mut y_values) = {
             let stats = self.title_writers.clone();
@@ -272,6 +313,8 @@ fn do_render(
         name if name.contains("get") => BLACK,
         name if name.contains("range") => CYAN,
         name if name.contains("reverse") => MAGENTA,
+        name if name.contains("cpu") => BLUE,
+        name if name.contains("rss") => BLUE,
         name => panic!("unreachable {}", name),
     };
     let clrs: Vec<RGBColor> = names.iter().map(|n| color_for(n)).collect();
@@ -430,7 +473,8 @@ fn parse_log(opt: &Opt) -> Result<PlotData, String> {
         .collect();
 
     let mut stats: Vec<Vec<Vec<StatLine>>> = vec![];
-    for mode in vec!["initial", "incremental", "reader", "writer"].into_iter() {
+    let stat_types = vec!["system", "initial", "incremental", "reader", "writer"];
+    for mode in stat_types.into_iter() {
         let mut stat_mode = vec![];
         for thread in 0.. {
             let s: Vec<StatLine> = stat_lines
@@ -447,10 +491,11 @@ fn parse_log(opt: &Opt) -> Result<PlotData, String> {
     }
 
     Ok(PlotData {
+        title_system: stats.remove(0),
         title_initial: stats.remove(0),
         title_incrmnt: stats.remove(0),
-        title_writers: stats.remove(0),
         title_readers: stats.remove(0),
+        title_writers: stats.remove(0),
     })
 }
 
@@ -467,6 +512,7 @@ fn parse_periodic_stats(msg: String) -> Option<StatLine> {
     let a = tp.first().as_ref().map(|s| s.as_str());
     let z = tp.last().as_ref().map(|s| s.as_str());
     let (mode, thread): (&'static str, usize) = match (a, z) {
+        (Some("system"), Some("system")) => ("system", 0),
         (Some("initial"), Some("initial")) => ("initial", 0),
         (Some("initial"), Some(thread)) => ("initial", thread.parse().unwrap()),
         (Some("incremental"), Some("incremental")) => ("incremental", 0),
@@ -529,7 +575,7 @@ fn log_lines(files: &PlotFiles) -> Vec<String> {
     lines
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct StatLine {
     mode: &'static str,
     thread: usize,
@@ -552,6 +598,32 @@ impl StatLine {
                 Some(table) => {
                     let ops = table["ops"].as_integer().unwrap();
                     Some((self.millis, ops.try_into().unwrap()))
+                }
+                None => None,
+            },
+            None => None,
+        }
+    }
+
+    fn to_cpu_load(&self) -> Option<(i64, u64)> {
+        match self.value.as_table() {
+            Some(table) => match table.get("system") {
+                Some(table) => {
+                    let load = table["cpu_load"].as_integer().unwrap();
+                    Some((self.millis, load.try_into().unwrap()))
+                }
+                None => None,
+            },
+            None => None,
+        }
+    }
+
+    fn to_mem_rss(&self) -> Option<(i64, u64)> {
+        match self.value.as_table() {
+            Some(table) => match table.get("system") {
+                Some(table) => {
+                    let load = table["mem_rss"].as_integer().unwrap();
+                    Some((self.millis, load.try_into().unwrap()))
                 }
                 None => None,
             },
@@ -606,18 +678,19 @@ fn normalize_to_secs(mut items: Vec<(i64, u64)>) -> Vec<u64> {
                 match acc.remove(acc.len() - 1) {
                     (t0, v0) if t0 + t1 <= 1000 => acc.push((t0 + t1, v0 + v1)),
                     (t0, v0) => {
-                        acc.push((t0, v0));
-                        acc.push((t1, v1));
+                        acc.push((t0 + t1, v0 + v1));
+                        acc.push((0, 0));
                     }
                 }
             }
             acc
         };
+        items.pop(); // NOTE: skip the last second.
 
         let mut acc = vec![items.remove(0).1];
         let (mut rem_t, mut rem_v) = (0, 0);
         for (mut t, mut v) in items.into_iter() {
-            assert!(t > 1000, "{}", t);
+            assert!(t >= 1000, "{}", t);
             assert!(t < 1000 * 100, "{}", t);
 
             t += rem_t;

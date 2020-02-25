@@ -14,6 +14,7 @@ use std::{
     convert::{TryFrom, TryInto},
     fs,
     io::Write,
+    thread, time,
 };
 
 mod generator;
@@ -125,6 +126,8 @@ fn do_main() -> Result<(), String> {
         std::process::exit(0);
     };
 
+    thread::spawn(|| system_stats());
+
     let p: Profile = opts.try_into()?;
 
     info!(target: "main  ", "starting with seed = {}", p.g.seed);
@@ -219,6 +222,67 @@ impl TryFrom<toml::Value> for Profile {
         Ok(p)
     }
 }
+
+fn system_stats() {
+    use sysinfo::{ProcessorExt, System, SystemExt};
+
+    let mut sys = System::new();
+
+    loop {
+        thread::sleep(time::Duration::from_secs(1));
+        sys.refresh_system();
+
+        let mut cpu_load = 0_f32;
+        for cpu in sys.get_processor_list() {
+            cpu_load += cpu.get_cpu_usage();
+        }
+        let cpu_load = (cpu_load * 100_f32) as u64;
+        let mem_rss = sys.get_used_memory() / 1024;
+
+        let line = format!("system = {{ cpu_load={}, mem_rss={} }}", cpu_load, mem_rss);
+        info!(target: "ixperf", "system periodic-stats\n{}", line);
+    }
+}
+
+//fn system_stats() {
+//    use systemstat::{saturating_sub_bytes, Platform, System};
+//
+//    let sys = System::new();
+//    let mut cpu_load_aggr = sys.cpu_load_aggregate();
+//
+//    loop {
+//        thread::sleep(time::Duration::from_secs(1));
+//
+//        let mem_rss = match sys.memory() {
+//            Ok(mem) => saturating_sub_bytes(mem.total, mem.free),
+//            Err(err) => {
+//                error!("Memory: error: {}", err);
+//                std::process::exit(0);
+//            }
+//        };
+//        let cpu_load = match cpu_load_aggr {
+//            Ok(cpu) => {
+//                let cpu = cpu.done().unwrap();
+//                println!("cpu load {:?}", cpu);
+//                ((cpu.user * 100.0) as u64, (cpu.system * 100.0) as u64)
+//            }
+//            Err(err) => {
+//                error!("Memory: error: {}", err);
+//                std::process::exit(0);
+//            }
+//        };
+//
+//        let line = format!(
+//            "system = {{ cpu_user={} cpu_system={} mem_rss={} }}",
+//            cpu_load.0,
+//            cpu_load.1,
+//            mem_rss.as_u64()
+//        );
+//        info!(target: "ixperf", "sysmonitor periodic-stats\n{}", line);
+//
+//        cpu_load_aggr = sys.cpu_load_aggregate();
+//    }
+//}
 
 #[cfg(test)]
 mod jealloc_bench;
