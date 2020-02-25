@@ -64,11 +64,12 @@ impl PlotData {
     }
 
     fn render_load_latency(&self, opt: &Opt, path_dir: path::PathBuf) {
+        let p = opt.percentile.as_str();
         let stats = self.title_initial.clone();
         let x_axis = "Seconds";
         let y_axis = "Latency in nS";
         let file = "initial-load-latency.png";
-        let title = "initial-load latency 98th percentile";
+        let title = format!("initial-load latency {} percentile", p);
         let names = vec!["load".to_string()];
 
         let mut lats: Vec<(i64, u64)> = {
@@ -79,7 +80,7 @@ impl PlotData {
 
         let y_values = vec![normalize_to_secs(lats)];
         let dir = &path_dir.join(file);
-        do_render(dir, title, names, x_axis, y_axis, y_values)
+        do_render(dir, &title, names, x_axis, y_axis, y_values)
     }
 
     fn render_incr_throughput(&self, _opt: &Opt, path_dir: path::PathBuf) {
@@ -109,11 +110,12 @@ impl PlotData {
     }
 
     fn render_incr_latency(&self, opt: &Opt, path_dir: path::PathBuf) {
+        let p = opt.percentile.as_str();
         let stats = self.title_incrmnt.clone();
         let x_axis = "Seconds";
         let y_axis = "Latency in nS";
         let file = "initial-incremental-latency.png";
-        let title = "initial-incremental latency 98th percentile";
+        let title = format!("initial-load latency {} percentile", p);
         let names = {
             let names = vec!["set", "delete", "get"];
             names.into_iter().map(|s| s.to_string()).collect()
@@ -134,7 +136,7 @@ impl PlotData {
             iter.collect()
         };
         let dir = &path_dir.join(file);
-        do_render(dir, title, names, x_axis, y_axis, y_values)
+        do_render(dir, &title, names, x_axis, y_axis, y_values)
     }
 
     fn render_concur_throughput(&self, _opt: &Opt, path_dir: path::PathBuf) {
@@ -193,10 +195,11 @@ impl PlotData {
     }
 
     fn render_concur_latency(&self, opt: &Opt, path_dir: path::PathBuf) {
+        let p = opt.percentile.as_str();
         let x_axis = "Seconds";
         let y_axis = "Latency in nS";
         let file = "initial-concurrent-latency.png";
-        let title = "initial-concurrent latency 98th percentile";
+        let title = format!("initial-load latency {} percentile", p);
 
         let (mut names, mut y_values) = {
             let stats = self.title_writers.clone();
@@ -248,7 +251,7 @@ impl PlotData {
         y_values.extend_from_slice(&y_values_r);
 
         let dir = &path_dir.join(file);
-        do_render(dir, title, names, x_axis, y_axis, y_values)
+        do_render(dir, &title, names, x_axis, y_axis, y_values)
     }
 }
 
@@ -461,14 +464,15 @@ fn parse_periodic_stats(msg: String) -> Option<StatLine> {
     let cap = re1.captures_iter(lines[0]).next().unwrap();
 
     let tp: Vec<String> = cap[2].split("-").map(|x| x.to_string()).collect();
-    let (a, z) = (tp.first().as_ref().map(|s| s.as_str()), tp.last());
+    let a = tp.first().as_ref().map(|s| s.as_str());
+    let z = tp.last().as_ref().map(|s| s.as_str());
     let (mode, thread): (&'static str, usize) = match (a, z) {
-        (Some("initial"), None) => ("initial", 0),
+        (Some("initial"), Some("initial")) => ("initial", 0),
         (Some("initial"), Some(thread)) => ("initial", thread.parse().unwrap()),
-        (Some("incremental"), None) => ("incremental", 0),
-        (Some("reader"), None) => ("reader", 0),
+        (Some("incremental"), Some("incremental")) => ("incremental", 0),
+        (Some("reader"), Some("reader")) => ("reader", 0),
         (Some("reader"), Some(thread)) => ("reader", thread.parse().unwrap()),
-        (Some("writer"), None) => ("writer", 0),
+        (Some("writer"), Some("writer")) => ("writer", 0),
         (Some("writer"), Some(thread)) => ("writer", thread.parse().unwrap()),
         _ => unreachable!(),
     };
@@ -587,30 +591,45 @@ fn normalize_to_secs(mut items: Vec<(i64, u64)>) -> Vec<u64> {
     } else if items.len() == 1 {
         vec![items.remove(0).1]
     } else {
-        let mut acc = vec![];
-
-        let mut prev_sec = {
-            let (prev_sec, val) = items.remove(0);
-            acc.push(val);
-            prev_sec
+        let items = {
+            let (_, v1) = items[0].clone();
+            let mut acc = vec![(0, v1)];
+            let iter = items[..].to_vec().into_iter();
+            for ((t1, _), (t2, v)) in iter.zip(items[1..].to_vec().into_iter()) {
+                acc.push(((t2 - t1), v))
+            }
+            acc
+        };
+        let mut items = {
+            let mut acc = vec![(0, 0)];
+            for (t1, v1) in items.into_iter() {
+                match acc.remove(acc.len() - 1) {
+                    (t0, v0) if t0 + t1 <= 1000 => acc.push((t0 + t1, v0 + v1)),
+                    (t0, v0) => {
+                        acc.push((t0, v0));
+                        acc.push((t1, v1));
+                    }
+                }
+            }
+            acc
         };
 
-        let mut last_sec = prev_sec;
-        let mut rem_val = 0;
-        for (millis, val) in items.into_iter() {
-            if (millis - last_sec) < 1000 {
-                rem_val += val
-            } else {
-                let p_sec = (last_sec + 1000) - prev_sec;
-                let (p, q) = {
-                    let p = (val as f64 / millis as f64) * (p_sec as f64);
-                    (p as u64, val - (p as u64))
-                };
-                acc.push(rem_val + p);
-                rem_val = q;
-                last_sec += 1000;
+        let mut acc = vec![items.remove(0).1];
+        let (mut rem_t, mut rem_v) = (0, 0);
+        for (mut t, mut v) in items.into_iter() {
+            assert!(t > 1000, "{}", t);
+            assert!(t < 1000 * 100, "{}", t);
+
+            t += rem_t;
+            v += rem_v;
+            while t >= 1000 {
+                let r = 1000.0 / (t as f64);
+                acc.push(((v as f64) * r) as u64);
+                t = t - 1000;
+                v = v - acc[acc.len() - 1];
             }
-            prev_sec = millis;
+            rem_t = t;
+            rem_v = v;
         }
 
         acc

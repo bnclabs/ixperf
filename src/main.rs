@@ -122,6 +122,7 @@ fn do_main() -> Result<(), String> {
     if opts.plot.0.len() > 0 {
         let opts = Opt::from_args();
         plot::do_plot(opts)?;
+        std::process::exit(0);
     };
 
     let p: Profile = opts.try_into()?;
