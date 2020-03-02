@@ -304,6 +304,10 @@ fn do_render(
     y_desc: &str,
     valuess: Vec<Vec<u64>>,
 ) {
+    if valuess.iter().all(|values| values.len() == 0) {
+        return;
+    }
+
     info!(target: "plot", "plotting throughput for {} at {:?}", title, file);
 
     let color_for = move |name: &str| match name {
