@@ -7,19 +7,19 @@ use crate::generator::{Cmd, IncrementalLoad, InitialLoad, RandomKV};
 use crate::stats;
 use crate::Profile;
 
-pub fn do_llrb_index(name: &str, p: Profile) -> Result<(), String> {
+pub fn perf(name: &str, p: Profile) -> Result<(), String> {
     match (p.key_type.as_str(), p.val_type.as_str()) {
-        ("i32", "i32") => Ok(perf::<i32, i32>(name, p)),
-        ("i32", "i64") => Ok(perf::<i32, i64>(name, p)),
-        ("i32", "array") => Ok(perf::<i32, [u8; 20]>(name, p)),
-        ("i32", "bytes") => Ok(perf::<i32, Vec<u8>>(name, p)),
-        ("i64", "i64") => Ok(perf::<i64, i64>(name, p)),
-        ("i64", "array") => Ok(perf::<i64, [u8; 20]>(name, p)),
-        ("i64", "bytes") => Ok(perf::<i64, Vec<u8>>(name, p)),
-        ("array", "array") => Ok(perf::<[u8; 20], [u8; 20]>(name, p)),
-        ("array", "bytes") => Ok(perf::<[u8; 20], Vec<u8>>(name, p)),
-        ("bytes", "bytes") => Ok(perf::<Vec<u8>, Vec<u8>>(name, p)),
-        ("bytes", "i64") => Ok(perf::<Vec<u8>, i64>(name, p)),
+        ("i32", "i32") => Ok(do_perf::<i32, i32>(name, p)),
+        ("i32", "i64") => Ok(do_perf::<i32, i64>(name, p)),
+        ("i32", "array") => Ok(do_perf::<i32, [u8; 20]>(name, p)),
+        ("i32", "bytes") => Ok(do_perf::<i32, Vec<u8>>(name, p)),
+        ("i64", "i64") => Ok(do_perf::<i64, i64>(name, p)),
+        ("i64", "array") => Ok(do_perf::<i64, [u8; 20]>(name, p)),
+        ("i64", "bytes") => Ok(do_perf::<i64, Vec<u8>>(name, p)),
+        ("array", "array") => Ok(do_perf::<[u8; 20], [u8; 20]>(name, p)),
+        ("array", "bytes") => Ok(do_perf::<[u8; 20], Vec<u8>>(name, p)),
+        ("bytes", "bytes") => Ok(do_perf::<Vec<u8>, Vec<u8>>(name, p)),
+        ("bytes", "i64") => Ok(do_perf::<Vec<u8>, i64>(name, p)),
         _ => Err(format!(
             "unsupported key/value types {}/{}",
             p.key_type, p.val_type
@@ -27,7 +27,7 @@ pub fn do_llrb_index(name: &str, p: Profile) -> Result<(), String> {
     }
 }
 
-fn perf<K, V>(name: &str, p: Profile)
+fn do_perf<K, V>(name: &str, p: Profile)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,

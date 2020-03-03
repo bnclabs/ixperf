@@ -143,10 +143,10 @@ fn do_main() -> Result<(), String> {
     }
 
     let res = match p.index.as_str() {
-        "llrb-index" => mod_llrb::do_llrb_index("ixperf", p),
-        "btree-map" => mod_btree_map::do_btree_map("ixperf", p),
-        "rdms" => mod_rdms::do_rdms_index(p),
+        "llrb-index" => mod_llrb::perf("ixperf", p),
+        "btree-map" => mod_btree_map::perf("ixperf", p),
         "lmdb" => mod_lmdb::perf(p),
+        "rdms" => mod_rdms::do_rdms_index(p),
         _ => Err(format!("unsupported index-type {}", p.index)),
     };
     match res {
