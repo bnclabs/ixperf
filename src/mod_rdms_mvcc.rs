@@ -1,11 +1,10 @@
 use log::info;
-
 use rand::{rngs::SmallRng, SeedableRng};
 
 use rdms::{
     self,
     core::{Diff, Footprint, Validate},
-    llrb::{Llrb, Stats as LlrbStats},
+    mvcc::{Mvcc, Stats as MvccStats},
 };
 
 use std::{
@@ -14,50 +13,51 @@ use std::{
     hash::Hash,
 };
 
-use crate::generator::{Cmd, RandomKV};
+use crate::generator::Cmd;
+use crate::generator::RandomKV;
 use crate::mod_rdms;
 use crate::stats;
 use crate::Profile;
 
 #[derive(Default, Clone)]
-pub struct LlrbOpt {
+pub struct MvccOpt {
     lsm: bool,
     sticky: bool,
     spin: bool,
 }
 
-impl TryFrom<toml::Value> for LlrbOpt {
+impl TryFrom<toml::Value> for MvccOpt {
     type Error = String;
 
     fn try_from(value: toml::Value) -> Result<Self, Self::Error> {
-        let mut llrb_opt: LlrbOpt = Default::default();
+        let mut mvcc_opt: MvccOpt = Default::default();
 
-        let section = match &value.get("rdms-llrb") {
+        let section = match &value.get("rdms-mvcc") {
             None => return Err("not found".to_string()),
             Some(section) => section.clone(),
         };
         for (name, value) in section.as_table().unwrap().iter() {
             match name.as_str() {
-                "lsm" => llrb_opt.lsm = value.as_bool().unwrap(),
-                "sticky" => llrb_opt.sticky = value.as_bool().unwrap(),
-                "spin" => llrb_opt.spin = value.as_bool().unwrap(),
+                "lsm" => mvcc_opt.lsm = value.as_bool().unwrap(),
+                "sticky" => mvcc_opt.sticky = value.as_bool().unwrap(),
+                "spin" => mvcc_opt.spin = value.as_bool().unwrap(),
                 _ => panic!("invalid profile parameter {}", name),
             }
         }
-        Ok(llrb_opt)
+        Ok(mvcc_opt)
     }
 }
 
-impl LlrbOpt {
-    fn new<K, V>(&self, name: &str) -> Box<Llrb<K, V>>
+impl MvccOpt {
+    fn new<K, V>(&self, name: &str) -> Box<Mvcc<K, V>>
     where
         K: Clone + Ord,
         V: Clone + Diff,
     {
         let mut index = if self.lsm {
-            Llrb::new_lsm(name)
+            Mvcc::new_lsm(name)
         } else {
-            Llrb::new(name)
+            Mvcc::new(name)
         };
         index.set_sticky(self.sticky).set_spinlatch(self.spin);
         index
@@ -70,22 +70,22 @@ where
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
     <V as Diff>::D: Send,
 {
-    let llrb_index = p.rdms_llrb.new(name);
-    let mut index = rdms::Rdms::new(name, llrb_index).unwrap();
+    let mvcc_index = p.rdms_mvcc.new(name);
+    let mut index = rdms::Rdms::new(name, mvcc_index).unwrap();
 
-    let fstats = mod_rdms::do_perf::<K, V, Box<Llrb<K, V>>>(&mut index, &p);
+    let fstats = mod_rdms::do_perf::<K, V, Box<Mvcc<K, V>>>(&mut index, &p);
 
     let istats = index.validate().unwrap();
-    info!(target: "ixperf", "rdms llrb stats\n{}", istats);
-    validate_llrb::<K, V>(&istats, &fstats, &p);
+    info!(target: "ixperf", "rdms mvcc stats\n{}", istats);
+    validate_mvcc::<K, V>(&istats, &fstats, &p);
 }
 
-fn validate_llrb<K, V>(stats: &LlrbStats, fstats: &stats::Ops, p: &Profile)
+fn validate_mvcc<K, V>(stats: &MvccStats, fstats: &stats::Ops, p: &Profile)
 where
     K: Clone + Ord + Default + Footprint + fmt::Debug + RandomKV,
     V: Clone + Diff + Default + Footprint + RandomKV,
 {
-    if p.rdms_llrb.lsm || p.rdms_llrb.sticky {
+    if p.rdms_mvcc.lsm || p.rdms_mvcc.sticky {
         let expected_entries = (fstats.load.count - fstats.load.items)
             + (fstats.set.count - fstats.set.items)
             + fstats.delete.items;
@@ -97,13 +97,18 @@ where
         assert_eq!(stats.entries, expected_entries);
     }
 
-    assert_eq!(stats.rw_latch.read_locks, fstats.to_total_reads() + 3);
     assert_eq!(stats.rw_latch.write_locks, fstats.to_total_writes());
     if fstats.to_total_reads() == 0 || fstats.to_total_writes() == 0 {
         assert_eq!(stats.rw_latch.conflicts, 0);
     }
 
-    if p.rdms_llrb.lsm == false {
+    assert_eq!(stats.snapshot_latch.read_locks, fstats.to_total_reads() + 3);
+    assert_eq!(stats.snapshot_latch.write_locks, fstats.to_total_writes());
+    if fstats.to_total_reads() == 0 || fstats.to_total_writes() == 0 {
+        assert_eq!(stats.snapshot_latch.conflicts, 0);
+    }
+
+    if p.rdms_mvcc.lsm == false {
         let mut rng = SmallRng::from_seed(p.g.seed.to_le_bytes());
         let (kfp1, kfp2, vfp) = match Cmd::<K, V>::gen_load(&mut rng, &p.g) {
             Cmd::Load { key, value } => (

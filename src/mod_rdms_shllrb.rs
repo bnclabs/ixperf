@@ -1,66 +1,76 @@
 use log::info;
-
 use rand::{rngs::SmallRng, SeedableRng};
 
 use rdms::{
     self,
     core::{Diff, Footprint, Validate},
-    llrb::{Llrb, Stats as LlrbStats},
+    llrb::Stats as LlrbStats,
+    shllrb,
 };
 
 use std::{
     convert::{TryFrom, TryInto},
     fmt,
     hash::Hash,
+    time,
 };
 
-use crate::generator::{Cmd, RandomKV};
+use crate::generator::Cmd;
+use crate::generator::RandomKV;
 use crate::mod_rdms;
 use crate::stats;
 use crate::Profile;
 
 #[derive(Default, Clone)]
-pub struct LlrbOpt {
+pub struct ShllrbOpt {
     lsm: bool,
     sticky: bool,
     spin: bool,
+    interval: i64,
+    max_shards: i64,
+    max_entries: i64,
 }
 
-impl TryFrom<toml::Value> for LlrbOpt {
+impl TryFrom<toml::Value> for ShllrbOpt {
     type Error = String;
 
     fn try_from(value: toml::Value) -> Result<Self, Self::Error> {
-        let mut llrb_opt: LlrbOpt = Default::default();
+        let mut opt: ShllrbOpt = Default::default();
 
-        let section = match &value.get("rdms-llrb") {
+        let section = match &value.get("rdms-shllrb") {
             None => return Err("not found".to_string()),
             Some(section) => section.clone(),
         };
         for (name, value) in section.as_table().unwrap().iter() {
             match name.as_str() {
-                "lsm" => llrb_opt.lsm = value.as_bool().unwrap(),
-                "sticky" => llrb_opt.sticky = value.as_bool().unwrap(),
-                "spin" => llrb_opt.spin = value.as_bool().unwrap(),
+                "lsm" => opt.lsm = value.as_bool().unwrap(),
+                "sticky" => opt.sticky = value.as_bool().unwrap(),
+                "spin" => opt.spin = value.as_bool().unwrap(),
+                "interval" => opt.interval = value.as_integer().unwrap(),
+                "max_shards" => opt.max_shards = value.as_integer().unwrap(),
+                "max_entries" => opt.max_entries = value.as_integer().unwrap(),
                 _ => panic!("invalid profile parameter {}", name),
             }
         }
-        Ok(llrb_opt)
+        Ok(opt)
     }
 }
 
-impl LlrbOpt {
-    fn new<K, V>(&self, name: &str) -> Box<Llrb<K, V>>
+impl ShllrbOpt {
+    fn new<K, V>(&self, name: &str) -> Box<shllrb::ShLlrb<K, V>>
     where
-        K: Clone + Ord,
-        V: Clone + Diff,
+        K: 'static + Send + Clone + Ord + Footprint,
+        V: 'static + Send + Clone + Diff + Footprint,
+        <V as Diff>::D: Send,
     {
-        let mut index = if self.lsm {
-            Llrb::new_lsm(name)
-        } else {
-            Llrb::new(name)
-        };
-        index.set_sticky(self.sticky).set_spinlatch(self.spin);
-        index
+        let mut config: shllrb::Config = Default::default();
+        config
+            .set_lsm(self.lsm)
+            .set_sticky(self.sticky)
+            .set_spinlatch(self.spin)
+            .set_shard_config(self.max_shards as usize, self.max_entries as usize)
+            .set_interval(time::Duration::from_secs(self.interval as u64));
+        shllrb::ShLlrb::new(name, config)
     }
 }
 
@@ -70,22 +80,22 @@ where
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
     <V as Diff>::D: Send,
 {
-    let llrb_index = p.rdms_llrb.new(name);
-    let mut index = rdms::Rdms::new(name, llrb_index).unwrap();
+    let index = p.rdms_shllrb.new(name);
+    let mut index = rdms::Rdms::new(name, index).unwrap();
 
-    let fstats = mod_rdms::do_perf::<K, V, Box<Llrb<K, V>>>(&mut index, &p);
+    let fstats = mod_rdms::do_perf::<K, V, Box<shllrb::ShLlrb<K, V>>>(&mut index, &p);
 
     let istats = index.validate().unwrap();
-    info!(target: "ixperf", "rdms llrb stats\n{}", istats);
-    validate_llrb::<K, V>(&istats, &fstats, &p);
+    info!(target: "ixperf", "rdms shllrb stats\n{}", istats);
+    validate_shllrb::<K, V>(&istats, &fstats, &p);
 }
 
-fn validate_llrb<K, V>(stats: &LlrbStats, fstats: &stats::Ops, p: &Profile)
+fn validate_shllrb<K, V>(stats: &LlrbStats, fstats: &stats::Ops, p: &Profile)
 where
     K: Clone + Ord + Default + Footprint + fmt::Debug + RandomKV,
     V: Clone + Diff + Default + Footprint + RandomKV,
 {
-    if p.rdms_llrb.lsm || p.rdms_llrb.sticky {
+    if p.rdms_shllrb.lsm || p.rdms_shllrb.sticky {
         let expected_entries = (fstats.load.count - fstats.load.items)
             + (fstats.set.count - fstats.set.items)
             + fstats.delete.items;
@@ -97,13 +107,13 @@ where
         assert_eq!(stats.entries, expected_entries);
     }
 
-    assert_eq!(stats.rw_latch.read_locks, fstats.to_total_reads() + 3);
-    assert_eq!(stats.rw_latch.write_locks, fstats.to_total_writes());
+    // assert_eq!(stats.rw_latch.read_locks, fstats.to_total_reads() + 3);
+    // assert_eq!(stats.rw_latch.write_locks, fstats.to_total_writes());
     if fstats.to_total_reads() == 0 || fstats.to_total_writes() == 0 {
         assert_eq!(stats.rw_latch.conflicts, 0);
     }
 
-    if p.rdms_llrb.lsm == false {
+    if p.rdms_shllrb.lsm == false {
         let mut rng = SmallRng::from_seed(p.g.seed.to_le_bytes());
         let (kfp1, kfp2, vfp) = match Cmd::<K, V>::gen_load(&mut rng, &p.g) {
             Cmd::Load { key, value } => (

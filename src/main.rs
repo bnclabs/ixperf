@@ -24,6 +24,9 @@ mod mod_llrb;
 mod mod_lmdb;
 mod mod_rdms;
 mod mod_rdms_llrb;
+mod mod_rdms_mvcc;
+mod mod_rdms_robt;
+mod mod_rdms_shllrb;
 mod plot;
 mod stats;
 mod utils;
@@ -177,9 +180,9 @@ pub struct Profile {
     pub lmdb: mod_lmdb::LmdbOpt,
     pub rdms: mod_rdms::RdmsOpt,
     pub rdms_llrb: mod_rdms_llrb::LlrbOpt,
-    pub rdms_mvcc: mod_rdms::MvccOpt,
-    pub rdms_robt: mod_rdms::RobtOpt,
-    pub rdms_shllrb: mod_rdms::ShllrbOpt,
+    pub rdms_mvcc: mod_rdms_mvcc::MvccOpt,
+    pub rdms_robt: mod_rdms_robt::RobtOpt,
+    pub rdms_shllrb: mod_rdms_shllrb::ShllrbOpt,
 }
 
 impl TryFrom<toml::Value> for Profile {
