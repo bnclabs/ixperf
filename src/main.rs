@@ -23,6 +23,7 @@ mod mod_btree_map;
 mod mod_llrb;
 mod mod_lmdb;
 mod mod_rdms;
+mod mod_rdms_llrb;
 mod plot;
 mod stats;
 mod utils;
@@ -175,7 +176,7 @@ pub struct Profile {
     pub g: generator::GenOptions,
     pub lmdb: mod_lmdb::LmdbOpt,
     pub rdms: mod_rdms::RdmsOpt,
-    pub rdms_llrb: mod_rdms::LlrbOpt,
+    pub rdms_llrb: mod_rdms_llrb::LlrbOpt,
     pub rdms_mvcc: mod_rdms::MvccOpt,
     pub rdms_robt: mod_rdms::RobtOpt,
     pub rdms_shllrb: mod_rdms::ShllrbOpt,

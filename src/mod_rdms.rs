@@ -26,53 +26,9 @@ use std::{
 
 use crate::generator::{Cmd, IncrementalLoad, IncrementalRead, IncrementalWrite};
 use crate::generator::{InitialLoad, RandomKV};
+use crate::mod_rdms_llrb as mod_llrb;
 use crate::stats;
 use crate::Profile;
-
-#[derive(Default, Clone)]
-pub struct LlrbOpt {
-    lsm: bool,
-    sticky: bool,
-    spin: bool,
-}
-
-impl TryFrom<toml::Value> for LlrbOpt {
-    type Error = String;
-
-    fn try_from(value: toml::Value) -> Result<Self, Self::Error> {
-        let mut llrb_opt: LlrbOpt = Default::default();
-
-        let section = match &value.get("rdms-llrb") {
-            None => return Err("not found".to_string()),
-            Some(section) => section.clone(),
-        };
-        for (name, value) in section.as_table().unwrap().iter() {
-            match name.as_str() {
-                "lsm" => llrb_opt.lsm = value.as_bool().unwrap(),
-                "sticky" => llrb_opt.sticky = value.as_bool().unwrap(),
-                "spin" => llrb_opt.spin = value.as_bool().unwrap(),
-                _ => panic!("invalid profile parameter {}", name),
-            }
-        }
-        Ok(llrb_opt)
-    }
-}
-
-impl LlrbOpt {
-    fn new<K, V>(&self, name: &str) -> Box<Llrb<K, V>>
-    where
-        K: Clone + Ord,
-        V: Clone + Diff,
-    {
-        let mut index = if self.lsm {
-            Llrb::new_lsm(name)
-        } else {
-            Llrb::new(name)
-        };
-        index.set_sticky(self.sticky).set_spinlatch(self.spin);
-        index
-    }
-}
 
 #[derive(Default, Clone)]
 pub struct MvccOpt {
@@ -254,7 +210,6 @@ impl ShllrbOpt {
 pub struct RdmsOpt {
     pub index: String,
     pub name: String,
-    pub commit_interval: u64,
     pub initial: usize,
     pub readers: usize,
     pub writers: usize,
@@ -267,19 +222,6 @@ impl RdmsOpt {
 
     fn initial_threads(&self) -> usize {
         self.initial
-    }
-
-    fn configure<K, V, I>(&self, index: &mut rdms::Rdms<K, V, I>)
-    where
-        K: Send + Clone + Ord + Footprint,
-        V: Send + Clone + Diff + Footprint,
-        <V as Diff>::D: Send,
-        I: 'static + Send + Index<K, V>,
-    {
-        if self.commit_interval > 0 {
-            let interval = Duration::from_secs(self.commit_interval);
-            index.set_commit_interval(interval);
-        }
     }
 }
 
@@ -297,10 +239,6 @@ impl TryFrom<toml::Value> for RdmsOpt {
             match name.as_str() {
                 "name" => rdms_opt.name = value.as_str().unwrap().to_string(),
                 "index" => rdms_opt.index = value.as_str().unwrap().to_string(),
-                "commit_interval" => {
-                    let v = value.as_integer().unwrap();
-                    rdms_opt.commit_interval = v.try_into().unwrap();
-                }
                 "initial" => {
                     let v = value.as_integer().unwrap();
                     rdms_opt.initial = v.try_into().unwrap();
@@ -357,7 +295,7 @@ where
     <V as Diff>::D: Send + Default + Serialize,
 {
     match p.rdms.index.as_str() {
-        "llrb" => perf_llrb::<K, V>(name, p),
+        "llrb" => mod_llrb::perf_llrb::<K, V>(name, p),
         "mvcc" => perf_mvcc::<K, V>(name, p),
         "robt" => match p.rdms_robt.bitmap.as_str() {
             "nobitmap" => perf_robt::<K, V, NoBitmap>(name, p),
@@ -369,23 +307,6 @@ where
     }
 }
 
-fn perf_llrb<K, V>(name: &str, p: Profile)
-where
-    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + fmt::Debug + RandomKV + Hash,
-    V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
-    <V as Diff>::D: Send,
-{
-    let llrb_index = p.rdms_llrb.new(name);
-    let mut index = rdms::Rdms::new(name, llrb_index).unwrap();
-    p.rdms.configure(&mut index);
-
-    let fstats = do_perf::<K, V, Box<Llrb<K, V>>>(&mut index, &p);
-
-    let istats = index.validate().unwrap();
-    info!(target: "ixperf", "rdms llrb stats\n{}", istats);
-    validate_llrb::<K, V>(&istats, &fstats, &p);
-}
-
 fn perf_mvcc<K, V>(name: &str, p: Profile)
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + fmt::Debug + RandomKV + Hash,
@@ -394,7 +315,6 @@ where
 {
     let mvcc_index = p.rdms_mvcc.new(name);
     let mut index = rdms::Rdms::new(name, mvcc_index).unwrap();
-    p.rdms.configure(&mut index);
 
     let fstats = do_perf::<K, V, Box<Mvcc<K, V>>>(&mut index, &p);
 
@@ -422,7 +342,6 @@ where
 {
     let robt_index = p.rdms_robt.new(name);
     let mut index = rdms::Rdms::new(name, robt_index).unwrap();
-    p.rdms.configure(&mut index);
 
     // load initial data.
     let mut fstats = stats::Ops::new();
@@ -510,7 +429,6 @@ where
 {
     let index = p.rdms_shllrb.new(name);
     let mut index = rdms::Rdms::new(name, index).unwrap();
-    p.rdms.configure(&mut index);
 
     let fstats = do_perf::<K, V, Box<shllrb::ShLlrb<K, V>>>(&mut index, &p);
 
@@ -519,7 +437,7 @@ where
     validate_shllrb::<K, V>(&istats, &fstats, &p);
 }
 
-fn do_perf<K, V, I>(index: &mut rdms::Rdms<K, V, I>, p: &Profile) -> stats::Ops
+pub(crate) fn do_perf<K, V, I>(index: &mut rdms::Rdms<K, V, I>, p: &Profile) -> stats::Ops
 where
     K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV + Hash,
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
@@ -801,52 +719,6 @@ where
 
     info!(target: "ixperf", "writer-{} stats\n{:?}", id, fstats);
     fstats
-}
-
-fn validate_llrb<K, V>(stats: &LlrbStats, fstats: &stats::Ops, p: &Profile)
-where
-    K: Clone + Ord + Default + Footprint + fmt::Debug + RandomKV,
-    V: Clone + Diff + Default + Footprint + RandomKV,
-{
-    if p.rdms_llrb.lsm || p.rdms_llrb.sticky {
-        let expected_entries = (fstats.load.count - fstats.load.items)
-            + (fstats.set.count - fstats.set.items)
-            + fstats.delete.items;
-        assert_eq!(stats.entries, expected_entries);
-    } else {
-        let expected_entries = (fstats.load.count - fstats.load.items)
-            + (fstats.set.count - fstats.set.items)
-            - (fstats.delete.count - fstats.delete.items);
-        assert_eq!(stats.entries, expected_entries);
-    }
-
-    assert_eq!(stats.rw_latch.read_locks, fstats.to_total_reads() + 3);
-    assert_eq!(stats.rw_latch.write_locks, fstats.to_total_writes());
-    if fstats.to_total_reads() == 0 || fstats.to_total_writes() == 0 {
-        assert_eq!(stats.rw_latch.conflicts, 0);
-    }
-
-    if p.rdms_llrb.lsm == false {
-        let mut rng = SmallRng::from_seed(p.g.seed.to_le_bytes());
-        let (kfp1, kfp2, vfp) = match Cmd::<K, V>::gen_load(&mut rng, &p.g) {
-            Cmd::Load { key, value } => (
-                std::mem::size_of::<K>() + (key.footprint().unwrap() as usize),
-                key.footprint().unwrap() as usize,
-                std::mem::size_of::<V>() + (value.footprint().unwrap() as usize),
-            ),
-            _ => unreachable!(),
-        };
-        let entries = stats.entries;
-
-        let key_footprint: isize = ((kfp1 + kfp2) * entries).try_into().unwrap();
-        assert_eq!(stats.key_footprint, key_footprint);
-
-        let mut tree_footprint: isize = ((stats.node_size + kfp2 + vfp) * entries)
-            .try_into()
-            .unwrap();
-        tree_footprint -= (vfp * stats.n_deleted) as isize; // for sticky mode.
-        assert_eq!(stats.tree_footprint, tree_footprint);
-    }
 }
 
 fn validate_mvcc<K, V>(stats: &MvccStats, fstats: &stats::Ops, p: &Profile)

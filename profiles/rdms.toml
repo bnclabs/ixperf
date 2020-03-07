@@ -51,7 +51,6 @@ writers = 1
 [rdms]
 name = "rdms-ixperf"
 index = "shllrb"
-commit_interval = 0 # in seconds.
 initial = 16
 writers = 4
 readers = 16

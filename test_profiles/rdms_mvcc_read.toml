@@ -44,7 +44,6 @@ channel_size = 100_000
 
 [rdms]
 index = "mvcc"
-commit_interval = 0 # in seconds.
 initial = 1
 readers = 1
 writers = 1
