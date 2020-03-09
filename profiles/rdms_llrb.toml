@@ -1,8 +1,8 @@
 [ixperf]
 # Index-type to benchmark.
-index = "lmdb"
+index = "rdms"
 # Key-type for the index.
-key_type = "bytes"
+key_type = "array"
 # Value-type for the index
 value_type = "bytes"
 
@@ -10,15 +10,15 @@ value_type = "bytes"
 # Seed for randomization.
 seed = 0
 # Block size if key-type is vector-of-bytes.
-key_size = 64
+key_size = 20
 # Block size if key-type is vector-of-bytes.
-value_size = 400
+value_size = 64
 # Total number of initial load operations.
-loads = 10_000_000
+loads = 1_000_000
 # Total number of incremental set operations.
-sets = 10_000_000
+sets = 1_000_000
 # Total number of incremental delete operations.
-deletes = 1_000_000
+deletes = 0
 # Total number of get operations, applied after the initial load.
 gets = 10_000_000
 # Total number of range iterations between a lower bound and upper bound,
@@ -28,19 +28,27 @@ ranges = 0
 # applied after the initial load.
 reverses = 0
 # Benchmark a full table scan.
-iters = false
+iters = true
 # Channel size to use between generator thread and loader thread. If
 # channel size is <= ZERO, then index-ops shall be created asynchronously.
 channel_size = 0
 
-[lmdb]
-# Name of the lmdb index.
-name = "lmdb-ixperf"
-# Directory path to store lmdb files.
-dir = ""
-# Number of concurrent readers.
-readers = 8
-# Number of concurrent writers.
-writers = 1
-# Batch size for initial load.
-load_batch = 100_000
+[rdms]
+# Name of the rdms index.
+name = "rdms-ixperf"
+# Type of rdms to use.
+index = "llrb"
+# Number of writer threads for initial load.
+initial = 16
+# Number of writer threads for concurrent write.
+writers = 4
+# Number reader threads for concurrent read.
+readers = 16
+
+[rdms-llrb]
+# Create llrb with log-structured-merge.
+lsm = false
+# Create llrb in sticky mode.
+sticky = false
+# Spin while waiting for lock
+spin = true
