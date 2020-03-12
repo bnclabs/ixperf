@@ -46,7 +46,7 @@ pub struct Opt {
     #[structopt(long = "plot", default_value = "")]
     plot: plot::PlotFiles,
 
-    #[structopt(long = "ignore-error")]
+    #[structopt(long = "ignore-error", help = "Ignore log errors while plotting")]
     ignore_error: bool,
 
     #[structopt(long = "percentile", default_value = "99")]
@@ -84,9 +84,9 @@ impl TryFrom<Opt> for Profile {
     }
 }
 
-fn init_logging() {
+fn init_logging(opts: &Opt) {
     let mut builder = env_logger::Builder::from_default_env();
-    builder
+    let b = builder
         .target(env_logger::Target::Stdout)
         .format(|buf, record| {
             let mut level_style = buf.default_level_style(record.level());
@@ -109,22 +109,28 @@ fn init_logging() {
                 level_style.value(record.target()),
                 record.args()
             )
-        })
-        .filter(None, log::LevelFilter::Info)
-        .init();
+        });
+
+    let b = if opts.verbose {
+        b.filter(None, log::LevelFilter::Debug)
+    } else {
+        b.filter(None, log::LevelFilter::Info)
+    };
+
+    b.init();
 }
 
 fn main() {
     match do_main() {
         Ok(_) => (),
-        Err(err) => error!(target: "main  ", "failure: {}", err),
+        Err(err) => error!(target: "main  ", "{}", err),
     }
 }
 
 fn do_main() -> Result<(), String> {
-    init_logging();
-
     let opts = Opt::from_args();
+    init_logging(&opts);
+
     if opts.plot.0.len() > 0 {
         let opts = Opt::from_args();
         plot::do_plot(opts)?;

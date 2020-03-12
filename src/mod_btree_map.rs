@@ -5,7 +5,7 @@ use std::{
 
 use log::info;
 
-use crate::generator::{Cmd, IncrementalLoad, InitialLoad, RandomKV};
+use crate::generator::{Cmd, ConcurrentLoad, InitialLoad, RandomKV};
 use crate::stats;
 use crate::Profile;
 
@@ -98,7 +98,7 @@ where
 
     let mut fstats = stats::Ops::new();
     let mut lstats = stats::Ops::new();
-    let gen = IncrementalLoad::<K, V>::new(p.g.clone());
+    let gen = ConcurrentLoad::<K, V>::new(p.g.clone());
     for (_i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Set { key, value } => {

@@ -7,7 +7,7 @@ use std::{
 };
 
 use chrono::DateTime;
-use log::info;
+use log::{error, info};
 use plotters::{
     chart::SeriesLabelPosition,
     prelude::*,
@@ -551,7 +551,7 @@ fn validate_log(lines: &[String]) -> Result<(), String> {
 
     for line in lines {
         if re1.is_match(line) {
-            println!("{}", line);
+            error!(target: "plot  ", "{}", line);
             is_err = true;
         }
     }
