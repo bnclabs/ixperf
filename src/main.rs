@@ -23,6 +23,7 @@ mod mod_btree_map;
 mod mod_llrb;
 mod mod_lmdb;
 mod mod_rdms;
+mod mod_rdms_dgm;
 mod mod_rdms_llrb;
 mod mod_rdms_mvcc;
 mod mod_rdms_robt;
@@ -183,6 +184,7 @@ pub struct Profile {
     pub rdms_mvcc: mod_rdms_mvcc::MvccOpt,
     pub rdms_robt: mod_rdms_robt::RobtOpt,
     pub rdms_shllrb: mod_rdms_shllrb::ShllrbOpt,
+    pub rdms_dgm: mod_rdms_dgm::DgmOpt,
 }
 
 impl TryFrom<toml::Value> for Profile {
@@ -221,6 +223,9 @@ impl TryFrom<toml::Value> for Profile {
             .ok()
             .unwrap_or(Default::default());
         p.rdms_shllrb = TryFrom::try_from(value.clone())
+            .ok()
+            .unwrap_or(Default::default());
+        p.rdms_dgm = TryFrom::try_from(value.clone())
             .ok()
             .unwrap_or(Default::default());
         Ok(p)

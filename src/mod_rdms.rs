@@ -17,6 +17,7 @@ use std::{
 
 use crate::generator::{Cmd, IncrementalLoad, IncrementalRead, IncrementalWrite};
 use crate::generator::{InitialLoad, RandomKV};
+use crate::mod_rdms_dgm as mod_dgm;
 use crate::mod_rdms_llrb as mod_llrb;
 use crate::mod_rdms_mvcc as mod_mvcc;
 use crate::mod_rdms_robt as mod_robt;
@@ -121,6 +122,7 @@ where
             bitmap => panic!("unsupported bitmap {}", bitmap),
         },
         "shllrb" => mod_shllrb::perf::<K, V>(name, p),
+        "dgm" => mod_dgm::perf::<K, V>(name, p),
         name => panic!("unsupported index {}", name),
     }
 }

@@ -5,7 +5,7 @@ use rand::{rngs::SmallRng, SeedableRng};
 use rdms::{
     self,
     core::{Diff, Footprint, Validate},
-    llrb::{Llrb, Stats as LlrbStats},
+    llrb::{llrb_factory, Llrb, LlrbFactory, Stats as LlrbStats},
 };
 
 use std::{
@@ -61,6 +61,16 @@ impl LlrbOpt {
         };
         index.set_sticky(self.sticky).set_spinlatch(self.spin);
         index
+    }
+
+    pub(crate) fn new_factory<K, V>(&self, _name: &str) -> LlrbFactory
+    where
+        K: Clone + Ord,
+        V: Clone + Diff,
+    {
+        let mut factory = llrb_factory(self.lsm);
+        factory.set_sticky(self.sticky).set_spinlatch(self.spin);
+        factory
     }
 }
 

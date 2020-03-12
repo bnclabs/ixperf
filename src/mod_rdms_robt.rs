@@ -8,7 +8,7 @@ use rdms::{
         Serialize, Validate, Writer,
     },
     llrb::Llrb,
-    robt::{self, Robt, Stats as RobtStats},
+    robt::{self, Robt, RobtFactory, Stats as RobtStats},
 };
 
 use std::{
@@ -28,23 +28,23 @@ use crate::Profile;
 
 #[derive(Default, Clone)]
 pub struct RobtOpt {
-    dir: ffi::OsString,
-    z_blocksize: usize,
-    m_blocksize: usize,
-    v_blocksize: usize,
-    delta_ok: bool,
-    vlog_file: Option<ffi::OsString>,
-    value_in_vlog: bool,
-    flush_queue_size: usize,
-    mmap: bool,
-    bitmap: String,
+    pub dir: ffi::OsString,
+    pub z_blocksize: usize,
+    pub m_blocksize: usize,
+    pub v_blocksize: usize,
+    pub delta_ok: bool,
+    pub vlog_file: Option<ffi::OsString>,
+    pub value_in_vlog: bool,
+    pub flush_queue_size: usize,
+    pub mmap: bool,
+    pub bitmap: String,
 }
 
 impl TryFrom<toml::Value> for RobtOpt {
     type Error = String;
 
     fn try_from(value: toml::Value) -> Result<Self, Self::Error> {
-        let mut robt_opt: RobtOpt = Default::default();
+        let mut opt: RobtOpt = Default::default();
 
         let section = match &value.get("rdms-robt") {
             None => return Err("not found".to_string()),
@@ -54,34 +54,28 @@ impl TryFrom<toml::Value> for RobtOpt {
             match name.as_str() {
                 "dir" => {
                     let dir: &ffi::OsStr = value.as_str().unwrap().as_ref();
-                    robt_opt.dir = dir.to_os_string();
+                    opt.dir = dir.to_os_string();
                 }
-                "z_blocksize" => {
-                    robt_opt.z_blocksize = value.as_integer().unwrap().try_into().unwrap()
-                }
-                "m_blocksize" => {
-                    robt_opt.m_blocksize = value.as_integer().unwrap().try_into().unwrap()
-                }
-                "v_blocksize" => {
-                    robt_opt.v_blocksize = value.as_integer().unwrap().try_into().unwrap()
-                }
-                "delta_ok" => robt_opt.delta_ok = value.as_bool().unwrap(),
-                "vlog_file" if value.as_str().unwrap() == "" => robt_opt.vlog_file = None,
+                "z_blocksize" => opt.z_blocksize = value.as_integer().unwrap().try_into().unwrap(),
+                "m_blocksize" => opt.m_blocksize = value.as_integer().unwrap().try_into().unwrap(),
+                "v_blocksize" => opt.v_blocksize = value.as_integer().unwrap().try_into().unwrap(),
+                "delta_ok" => opt.delta_ok = value.as_bool().unwrap(),
+                "vlog_file" if value.as_str().unwrap() == "" => opt.vlog_file = None,
                 "vlog_file" => {
                     let vlog_file: &ffi::OsStr = value.as_str().unwrap().as_ref();
-                    robt_opt.vlog_file = Some(vlog_file.to_os_string());
+                    opt.vlog_file = Some(vlog_file.to_os_string());
                 }
-                "value_in_vlog" => robt_opt.value_in_vlog = value.as_bool().unwrap(),
+                "value_in_vlog" => opt.value_in_vlog = value.as_bool().unwrap(),
                 "flush_queue_size" => {
-                    robt_opt.flush_queue_size = value.as_integer().unwrap().try_into().unwrap()
+                    opt.flush_queue_size = value.as_integer().unwrap().try_into().unwrap()
                 }
-                "mmap" => robt_opt.mmap = value.as_bool().unwrap(),
-                "bitmap" => robt_opt.bitmap = value.as_str().unwrap().to_string(),
+                "mmap" => opt.mmap = value.as_bool().unwrap(),
+                "bitmap" => opt.bitmap = value.as_str().unwrap().to_string(),
                 _ => panic!("invalid profile parameter {}", name),
             }
         }
 
-        Ok(robt_opt)
+        Ok(opt)
     }
 }
 
@@ -101,6 +95,23 @@ impl RobtOpt {
             .set_flush_queue_size(self.flush_queue_size);
 
         robt::robt_factory(config).new(&self.dir, name).unwrap()
+    }
+
+    pub(crate) fn new_factory<K, V, B>(&self, _name: &str) -> RobtFactory<K, V, B>
+    where
+        K: 'static + Default + Clone + Ord + Send + Hash + Footprint + Serialize,
+        V: Clone + Default + Diff + Footprint + Serialize,
+        <V as Diff>::D: Default + Serialize,
+        B: 'static + Send + Bloom,
+    {
+        let mut config: robt::Config = Default::default();
+        config.set_blocksize(self.z_blocksize, self.m_blocksize, self.v_blocksize);
+        config.set_delta(self.vlog_file.clone(), self.delta_ok);
+        config
+            .set_value_log(self.vlog_file.clone(), self.value_in_vlog)
+            .set_flush_queue_size(self.flush_queue_size);
+
+        robt::robt_factory(config)
     }
 
     pub(crate) fn to_bitmap(&self) -> &str {
@@ -169,7 +180,7 @@ where
     }
 
     let cutoff = Cutoff::new_lsm(Bound::Excluded(0));
-    index.compact(cutoff, |_| vec![]).unwrap();
+    index.compact(cutoff).unwrap();
 
     // validate
     let mut r = index.to_reader().unwrap();
