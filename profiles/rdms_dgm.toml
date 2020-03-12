@@ -1,0 +1,90 @@
+[ixperf]
+# Index-type to benchmark.
+index = "rdms"
+# Key-type for the index.
+key_type = "array"
+# Value-type for the index
+value_type = "bytes"
+
+[generator]
+# Seed for randomization.
+seed = 0
+# Block size if key-type is vector-of-bytes.
+key_size = 20
+# Block size if key-type is vector-of-bytes.
+value_size = 64
+# Total number of initial load operations.
+loads = 1_000_000
+# Total number of incremental set operations.
+sets = 1_000_000
+# Total number of incremental delete operations.
+deletes = 0
+# Total number of get operations, applied after the initial load.
+gets = 10_000_000
+# Total number of range iterations between a lower bound and upper bound,
+# applied after the initial load.
+ranges = 0
+# Total number of reverse iterations between an upper bound and lower bound,
+# applied after the initial load.
+reverses = 0
+# Benchmark a full table scan.
+iters = true
+# Channel size to use between generator thread and loader thread. If
+# channel size is <= ZERO, then index-ops shall be created asynchronously.
+channel_size = 0
+
+[rdms]
+# Name of the rdms index.
+name = "rdms-ixperf"
+# Type of rdms to use.
+index = "dgm"
+# Number of writer threads for initial load.
+initial = 16
+# Number of writer threads for concurrent write.
+writers = 4
+# Number reader threads for concurrent read.
+readers = 16
+
+[rdms-dgm]
+dir = "./data/dgm/"
+mem_index = "llrb"
+disk_index = "robt"
+lsm = false
+mem_ratio = 0.5
+disk_ratio = 0.5
+commit_interval = 10
+compact_interval = 20
+
+[rdms-llrb]
+# Create llrb with log-structured-merge.
+lsm = false
+# Create llrb in sticky mode.
+sticky = false
+# Spin while waiting for lock
+spin = true
+
+[rdms-robt]
+# Directory path to store robt files.
+dir = "./data"
+# Block size for leaf nodes, must be a multiple of underlying
+# storage's block size.
+z_blocksize = 4096
+# Block size for intermediate nodes, must be a multiple of underlying
+# storage's block size and typically less than z_blocksize.
+m_blocksize = 4096
+# Value log block size, must be a multiple of underlying storage's
+# block size.
+v_blocksize = 4096
+# Save delta in value log file.
+delta_ok = true
+# Value log file name to use, use this only if it is totally necessary.
+vlog_file = ""
+# Value to be stored in separate log files, instead of storing it
+# along with the key in leaf nodes.
+value_in_vlog = true
+# Block queue size while building robt index.
+flush_queue_size = 64
+# Use mmap while reading snapshot, entire file will be mmapped.
+mmap = true
+# Type of bitmap index to use a bloom filter for get ops.
+bitmap = "nobitmap"

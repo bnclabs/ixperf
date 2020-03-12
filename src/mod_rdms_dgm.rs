@@ -140,6 +140,15 @@ where
             let _fstats = mod_rdms::do_perf::<K, V, _>(&mut index, &p);
             index.validate().unwrap()
         }
+        ("llrb", "robt", "nobitmap") => {
+            let mut index = {
+                let m = p.rdms_llrb.new_factory::<K, V>(name);
+                let d = p.rdms_robt.new_factory::<K, V, CRoaring>(name);
+                rdms::Rdms::new(name, p.rdms_dgm.new(name, m, d)).unwrap()
+            };
+            let _fstats = mod_rdms::do_perf::<K, V, _>(&mut index, &p);
+            index.validate().unwrap()
+        }
         _ => unreachable!(),
     };
 
