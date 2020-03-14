@@ -64,12 +64,15 @@ impl ShllrbOpt {
         <V as Diff>::D: Send,
     {
         let mut config: shllrb::Config = Default::default();
+        config.set_lsm(self.lsm).unwrap();
+        config.set_sticky(self.sticky).unwrap();
+        config.set_spinlatch(self.spin).unwrap();
         config
-            .set_lsm(self.lsm)
-            .set_sticky(self.sticky)
-            .set_spinlatch(self.spin)
             .set_shard_config(self.max_shards as usize, self.max_entries as usize)
-            .set_interval(time::Duration::from_secs(self.interval as u64));
+            .unwrap();
+        config
+            .set_interval(time::Duration::from_secs(self.interval as u64))
+            .unwrap();
         shllrb::ShLlrb::new(name, config)
     }
 }

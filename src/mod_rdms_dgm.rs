@@ -94,18 +94,17 @@ impl DgmOpt {
         <D::I as Index<K, V>>::W: 'static + Send,
     {
         let mut config: dgm::Config = Default::default();
-        config.set_lsm(self.lsm);
+        config.set_lsm(self.lsm).unwrap();
         if let Some(m0_limit) = self.m0_limit {
-            config.set_m0_limit(m0_limit);
+            config.set_m0_limit(m0_limit).unwrap();
         }
-        config
-            .set_mem_ratio(self.mem_ratio)
-            .set_disk_ratio(self.disk_ratio);
+        config.set_mem_ratio(self.mem_ratio).unwrap();
+        config.set_disk_ratio(self.disk_ratio).unwrap();
         if let Some(ci) = self.commit_interval {
-            config.set_commit_interval(ci);
+            config.set_commit_interval(ci).unwrap();
         }
         if let Some(ci) = self.compact_interval {
-            config.set_compact_interval(ci);
+            config.set_compact_interval(ci).unwrap();
         }
 
         dgm::Dgm::new(&self.dir, name, m, d, config).unwrap()

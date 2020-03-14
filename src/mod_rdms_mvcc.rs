@@ -59,7 +59,8 @@ impl MvccOpt {
         } else {
             Mvcc::new(name)
         };
-        index.set_sticky(self.sticky).set_spinlatch(self.spin);
+        index.set_sticky(self.sticky).unwrap();
+        index.set_spinlatch(self.spin).unwrap();
         index
     }
 }

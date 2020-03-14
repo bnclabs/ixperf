@@ -59,7 +59,8 @@ impl LlrbOpt {
         } else {
             Llrb::new(name)
         };
-        index.set_sticky(self.sticky).set_spinlatch(self.spin);
+        index.set_sticky(self.sticky).unwrap();
+        index.set_spinlatch(self.spin).unwrap();
         index
     }
 
@@ -69,7 +70,8 @@ impl LlrbOpt {
         V: Clone + Diff,
     {
         let mut factory = llrb_factory(self.lsm);
-        factory.set_sticky(self.sticky).set_spinlatch(self.spin);
+        factory.set_sticky(self.sticky).unwrap();
+        factory.set_spinlatch(self.spin).unwrap();
         factory
     }
 }

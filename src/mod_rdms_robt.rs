@@ -88,11 +88,16 @@ impl RobtOpt {
         B: 'static + Send + Bloom,
     {
         let mut config: robt::Config = Default::default();
-        config.set_blocksize(self.z_blocksize, self.m_blocksize, self.v_blocksize);
-        config.set_delta(self.vlog_file.clone(), self.delta_ok);
+        config
+            .set_blocksize(self.z_blocksize, self.m_blocksize, self.v_blocksize)
+            .unwrap();
+        config
+            .set_delta(self.vlog_file.clone(), self.delta_ok)
+            .unwrap();
         config
             .set_value_log(self.vlog_file.clone(), self.value_in_vlog)
-            .set_flush_queue_size(self.flush_queue_size);
+            .unwrap();
+        config.set_flush_queue_size(self.flush_queue_size).unwrap();
 
         robt::robt_factory(config).new(&self.dir, name).unwrap()
     }
@@ -105,11 +110,16 @@ impl RobtOpt {
         B: 'static + Send + Bloom,
     {
         let mut config: robt::Config = Default::default();
-        config.set_blocksize(self.z_blocksize, self.m_blocksize, self.v_blocksize);
-        config.set_delta(self.vlog_file.clone(), self.delta_ok);
+        config
+            .set_blocksize(self.z_blocksize, self.m_blocksize, self.v_blocksize)
+            .unwrap();
+        config
+            .set_delta(self.vlog_file.clone(), self.delta_ok)
+            .unwrap();
         config
             .set_value_log(self.vlog_file.clone(), self.value_in_vlog)
-            .set_flush_queue_size(self.flush_queue_size);
+            .unwrap();
+        config.set_flush_queue_size(self.flush_queue_size).unwrap();
 
         robt::robt_factory(config)
     }
@@ -149,7 +159,7 @@ where
         } else {
             Llrb::new("load-rbt")
         };
-        mem_index.set_sticky(rng.gen::<bool>());
+        mem_index.set_sticky(rng.gen::<bool>()).unwrap();
         mem_index.set_seqno(seqno).unwrap();
         p.g.seed += i as u128 * 100;
         let gen = IncrementalWrite::<K, V>::new(p.g.clone());
