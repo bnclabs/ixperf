@@ -5,7 +5,7 @@ use cpuprofiler::PROFILER;
 
 use env_logger;
 use jemallocator;
-use log::{self, error, info};
+use log::{self, debug, error};
 use rand::random;
 use structopt::StructOpt;
 use toml;
@@ -30,6 +30,7 @@ mod mod_rdms_robt;
 mod mod_rdms_shllrb;
 mod plot;
 mod stats;
+#[macro_use]
 mod utils;
 
 #[global_allocator]
@@ -54,6 +55,9 @@ pub struct Opt {
 
     #[structopt(short = "v", long = "verbose")]
     verbose: bool,
+
+    #[structopt(long = "stats")]
+    stats: bool,
 }
 
 impl TryFrom<Opt> for Profile {
@@ -137,11 +141,11 @@ fn do_main() -> Result<(), String> {
         std::process::exit(0);
     };
 
-    thread::spawn(|| system_stats());
+    thread::spawn(|| system_stats(Opt::from_args()));
 
     let p: Profile = opts.try_into()?;
 
-    info!(target: "main  ", "starting with seed = {}", p.g.seed);
+    debug!(target: "main  ", "starting with seed = {}", p.g.seed);
 
     #[cfg(feature = "cpuprofile")]
     {
@@ -238,7 +242,7 @@ impl TryFrom<toml::Value> for Profile {
     }
 }
 
-fn system_stats() {
+fn system_stats(opts: Opt) {
     use sysinfo::{ProcessorExt, System, SystemExt};
 
     let mut sys = System::new();
@@ -255,7 +259,7 @@ fn system_stats() {
         let mem_rss = sys.get_used_memory() / 1024;
 
         let line = format!("system = {{ cpu_load={}, mem_rss={} }}", cpu_load, mem_rss);
-        info!(target: "ixperf", "system periodic-stats\n{}", line);
+        stats!(opts, "ixperf", "system periodic-stats\n{}", line);
     }
 }
 

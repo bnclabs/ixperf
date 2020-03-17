@@ -19,3 +19,12 @@ pub fn toml_to_u128(val: &toml::Value) -> u128 {
 pub fn toml_to_string(val: &toml::Value) -> String {
     val.as_str().map_or(Default::default(), |x| x).to_string()
 }
+
+#[macro_export]
+macro_rules! stats {
+    ($o:expr, $target:expr, $($arg:expr),+) => {
+        if $o.stats {
+            debug!(target: $target, $($arg),+);
+        }
+    };
+}
