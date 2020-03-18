@@ -560,7 +560,6 @@ impl RandomKV for Vec<u8> {
     }
 }
 
-#[allow(dead_code)]
 pub struct IterKeys<K>
 where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
