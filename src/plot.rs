@@ -379,7 +379,7 @@ fn do_render(
         .expect("draw label");
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct PlotFiles(pub Vec<fs::File>);
 
 impl FromStr for PlotFiles {

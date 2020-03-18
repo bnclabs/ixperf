@@ -12,7 +12,7 @@ use std::{
 };
 
 use crate::generator::InitialLoad;
-use crate::generator::{Cmd, ConcurrentLoad, IncrementalRead, IncrementalWrite};
+use crate::generator::{Cmd, IncrementalLoad, IncrementalRead, IncrementalWrite};
 use crate::stats;
 use crate::Profile;
 
@@ -195,7 +195,7 @@ fn do_initial(
             txn.commit().unwrap();
             txn = env.begin_rw_txn().unwrap();
         }
-        if p.verbose && lstats.is_sec_elapsed() {
+        if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
             info!(target: "ixperf", "initial periodic-stats\n{}", lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
@@ -231,7 +231,7 @@ fn do_incremental(
 
     let mut fstats = stats::Ops::new();
     let mut lstats = stats::Ops::new();
-    let gen = ConcurrentLoad::<Vec<u8>, Vec<u8>>::new(p.g.clone());
+    let gen = IncrementalLoad::<Vec<u8>, Vec<u8>>::new(p.g.clone());
     for (_i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Set { key, value } => {
@@ -286,7 +286,7 @@ fn do_incremental(
             Cmd::Reverse { .. } => (),
             _ => unreachable!(),
         };
-        if p.verbose && lstats.is_sec_elapsed() {
+        if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
             info!(target: "ixperf", "incremental periodic-stats\n{}", lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
@@ -339,7 +339,7 @@ fn do_write(
             }
             _ => unreachable!(),
         };
-        if p.verbose && lstats.is_sec_elapsed() {
+        if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
             info!(target: "ixperf", "writer-{} periodic-stats\n{}", i, lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
@@ -404,7 +404,7 @@ fn do_read(
             Cmd::Reverse { .. } => (),
             _ => unreachable!(),
         };
-        if p.verbose && lstats.is_sec_elapsed() {
+        if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
             info!(target: "ixperf", "reader-{} periodic-stats\n{}", i, lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();

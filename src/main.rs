@@ -10,12 +10,7 @@ use rand::random;
 use structopt::StructOpt;
 use toml;
 
-use std::{
-    convert::{TryFrom, TryInto},
-    fs,
-    io::Write,
-    thread, time,
-};
+use std::{convert::TryFrom, fs, io::Write, thread, time};
 
 mod generator;
 mod latency;
@@ -58,34 +53,6 @@ pub struct Opt {
 
     #[structopt(long = "stats")]
     stats: bool,
-}
-
-impl TryFrom<Opt> for Profile {
-    type Error = String;
-    fn try_from(opt: Opt) -> Result<Profile, String> {
-        let mut p: Profile = match opt.profile.as_str() {
-            "" => Err(format!("please provide a profile file")),
-            profile => match fs::read(profile) {
-                Ok(text) => {
-                    let text = std::str::from_utf8(&text).unwrap();
-                    let toml_value = match text.parse::<toml::Value>() {
-                        Ok(value) => Ok(value),
-                        Err(err) => Err(format!("{:}", err)),
-                    }?;
-                    Ok(TryFrom::try_from(toml_value)?)
-                }
-                Err(err) => Err(format!("{:?}", err)),
-            },
-        }?;
-        p.verbose = opt.verbose;
-        let seed = std::cmp::max(p.g.seed, opt.seed);
-        p.g.seed = match seed {
-            n if n > 0 => seed,
-            n if n == 0 => random(),
-            n => n,
-        };
-        Ok(p)
-    }
 }
 
 fn init_logging(opts: &Opt) {
@@ -141,9 +108,9 @@ fn do_main() -> Result<(), String> {
         std::process::exit(0);
     };
 
-    thread::spawn(|| system_stats(Opt::from_args()));
+    thread::spawn(|| system_stats());
 
-    let p: Profile = opts.try_into()?;
+    let p: Profile = Profile::new()?;
 
     debug!(target: "main  ", "starting with seed = {}", p.g.seed);
 
@@ -177,12 +144,11 @@ fn do_main() -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Clone, Default)]
 pub struct Profile {
     pub index: String,
     pub key_type: String,
     pub val_type: String,
-    pub verbose: bool,
+    pub cmd_opts: Opt,
 
     pub key_footprint: usize,
     pub value_footprint: usize,
@@ -195,6 +161,80 @@ pub struct Profile {
     pub rdms_robt: mod_rdms_robt::RobtOpt,
     pub rdms_shllrb: mod_rdms_shllrb::ShllrbOpt,
     pub rdms_dgm: mod_rdms_dgm::DgmOpt,
+}
+
+impl Default for Profile {
+    fn default() -> Profile {
+        Profile {
+            index: Default::default(),
+            key_type: Default::default(),
+            val_type: Default::default(),
+            cmd_opts: Opt::from_args(),
+
+            key_footprint: Default::default(),
+            value_footprint: Default::default(),
+
+            g: Default::default(),
+            lmdb: Default::default(),
+            rdms: Default::default(),
+            rdms_llrb: Default::default(),
+            rdms_mvcc: Default::default(),
+            rdms_robt: Default::default(),
+            rdms_shllrb: Default::default(),
+            rdms_dgm: Default::default(),
+        }
+    }
+}
+
+impl Clone for Profile {
+    fn clone(&self) -> Profile {
+        Profile {
+            index: self.index.clone(),
+            key_type: self.key_type.clone(),
+            val_type: self.key_type.clone(),
+            cmd_opts: Opt::from_args(),
+
+            key_footprint: self.key_footprint,
+            value_footprint: self.value_footprint,
+
+            g: self.g.clone(),
+            lmdb: self.lmdb.clone(),
+            rdms: self.rdms.clone(),
+            rdms_llrb: self.rdms_llrb.clone(),
+            rdms_mvcc: self.rdms_mvcc.clone(),
+            rdms_robt: self.rdms_robt.clone(),
+            rdms_shllrb: self.rdms_shllrb.clone(),
+            rdms_dgm: self.rdms_dgm.clone(),
+        }
+    }
+}
+
+impl Profile {
+    fn new() -> Result<Profile, String> {
+        let opt = Opt::from_args();
+        let mut p: Profile = match opt.profile.as_str() {
+            "" => Err(format!("please provide a profile file")),
+            profile => match fs::read(profile) {
+                Ok(text) => {
+                    let text = std::str::from_utf8(&text).unwrap();
+                    let toml_value = match text.parse::<toml::Value>() {
+                        Ok(value) => Ok(value),
+                        Err(err) => Err(format!("{:}", err)),
+                    }?;
+                    Ok(TryFrom::try_from(toml_value)?)
+                }
+                Err(err) => Err(format!("{:?}", err)),
+            },
+        }?;
+        let seed = std::cmp::max(p.g.seed, opt.seed);
+        p.g.seed = match seed {
+            n if n > 0 => seed,
+            n if n == 0 => random(),
+            n => n,
+        };
+        p.cmd_opts = opt;
+        Ok(p)
+    }
 }
 
 impl TryFrom<toml::Value> for Profile {
@@ -242,9 +282,10 @@ impl TryFrom<toml::Value> for Profile {
     }
 }
 
-fn system_stats(opts: Opt) {
+fn system_stats() {
     use sysinfo::{ProcessorExt, System, SystemExt};
 
+    let opts = Opt::from_args();
     let mut sys = System::new();
 
     loop {

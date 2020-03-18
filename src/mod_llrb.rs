@@ -1,9 +1,9 @@
 use std::time::{Duration, SystemTime};
 
 use llrb_index::Llrb;
-use log::info;
+use log::{debug, info};
 
-use crate::generator::{Cmd, ConcurrentLoad, InitialLoad, RandomKV};
+use crate::generator::{Cmd, IncrementalLoad, InitialLoad, RandomKV};
 use crate::stats;
 use crate::Profile;
 
@@ -33,34 +33,32 @@ where
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
     let mut index: Llrb<K, V> = Llrb::new(name);
-    info!(
+    debug!(
         target: "ixperf",
         "node overhead for llrb: {}", index.stats().node_size()
     );
-
-    let start = SystemTime::now();
-    do_initial_load(&mut index, &p);
-    let dur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
-    info!(
+    debug!(
         target: "ixperf",
-        "initial-load completed {} items in {:?}", index.len(), dur
+        "intial load for type <{},{}>", p.key_type, p.val_type
     );
 
-    let (start, mut iter_count) = (SystemTime::now(), 0);
-    if p.g.iters {
-        for _ in index.iter() {
-            iter_count += 1
+    do_initial_load(&mut index, &p);
+
+    let iter_elapsed = {
+        let start = SystemTime::now();
+        if p.g.iters {
+            let count = index.iter().map(|_| 1).collect::<Vec<u8>>().len();
+            assert_eq!(count, index.len());
         }
-        assert_eq!(iter_count, index.len());
-    }
-    let idur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
+        Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64)
+    };
 
     do_incremental(&mut index, &p);
 
     if p.g.iters {
         info!(
             target: "ixperf",
-            "llrb took {:?} to iter over {} items", idur, iter_count
+            "took {:?} to iter over {} items", iter_elapsed, index.len()
         );
     }
 
@@ -72,35 +70,42 @@ where
     K: 'static + Clone + Default + Send + Sync + Ord + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
-    if p.g.loads == 0 {
+    let load_ops = p.g.loads;
+    if load_ops == 0 {
         return;
     }
 
+    let mut fstats = stats::Ops::new();
+    let elapsed = {
+        let start = SystemTime::now();
+
+        let mut lstats = stats::Ops::new();
+        let gen = InitialLoad::<K, V>::new(p.g.clone());
+        for (_i, cmd) in gen.enumerate() {
+            match cmd {
+                Cmd::Load { key, value } => {
+                    lstats.load.sample_start(false);
+                    let items = index.set(key, value).map_or(0, |_| 1);
+                    lstats.load.sample_end(items);
+                }
+                _ => unreachable!(),
+            };
+            if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
+                stats!(&p.cmd_opts, "ixperf", "initial periodic-stats\n{}", lstats);
+                fstats.merge(&lstats);
+                lstats = stats::Ops::new();
+            }
+        }
+        fstats.merge(&lstats);
+        Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64)
+    };
+
+    stats!(&p.cmd_opts, "ixperf", "initial stats\n{:?}\n", fstats);
     info!(
         target: "ixperf",
-        "intial load for type <{},{}>", p.key_type, p.val_type
+        "initial-load load:{} index.len:{} elapsed:{:?}",
+        load_ops, index.len(), elapsed
     );
-    let mut fstats = stats::Ops::new();
-    let mut lstats = stats::Ops::new();
-    let gen = InitialLoad::<K, V>::new(p.g.clone());
-    for (_i, cmd) in gen.enumerate() {
-        match cmd {
-            Cmd::Load { key, value } => {
-                lstats.load.sample_start(false);
-                let items = index.set(key, value).map_or(0, |_| 1);
-                lstats.load.sample_end(items);
-            }
-            _ => unreachable!(),
-        };
-        if p.verbose && lstats.is_sec_elapsed() {
-            info!(target: "ixperf", "initial periodic-stats\n{}", lstats);
-            fstats.merge(&lstats);
-            lstats = stats::Ops::new();
-        }
-    }
-    fstats.merge(&lstats);
-
-    info!(target: "ixperf", "initial stats\n{:?}\n", fstats);
 }
 
 fn do_incremental<K, V>(index: &mut Llrb<K, V>, p: &Profile)
@@ -108,56 +113,67 @@ where
     K: 'static + Clone + Default + Send + Sync + Ord + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
-    if (p.g.read_ops() + p.g.write_ops()) == 0 {
+    let rw_ops = p.g.read_ops() + p.g.write_ops();
+    if rw_ops == 0 {
         return;
     }
 
+    let mut fstats = stats::Ops::new();
+    let elapsed = {
+        let start = SystemTime::now();
+
+        let mut lstats = stats::Ops::new();
+        let gen = IncrementalLoad::<K, V>::new(p.g.clone());
+        for (_i, cmd) in gen.enumerate() {
+            match cmd {
+                Cmd::Set { key, value } => {
+                    lstats.set.sample_start(false);
+                    let n = index.set(key, value.clone()).map_or(0, |_| 1);
+                    lstats.set.sample_end(n);
+                }
+                Cmd::Delete { key } => {
+                    lstats.delete.sample_start(false);
+                    let items = index.delete(&key).map_or(1, |_| 0);
+                    lstats.delete.sample_end(items);
+                }
+                Cmd::Get { key } => {
+                    lstats.get.sample_start(false);
+                    let items = index.get(&key).map_or(1, |_| 0);
+                    lstats.get.sample_end(items);
+                }
+                Cmd::Range { low, high } => {
+                    let iter = index.range((low, high));
+                    lstats.range.sample_start(true);
+                    lstats.range.sample_end(iter.fold(0, |acc, _| acc + 1));
+                }
+                Cmd::Reverse { low, high } => {
+                    let iter = index.reverse((low, high));
+                    lstats.reverse.sample_start(true);
+                    lstats.reverse.sample_end(iter.fold(0, |acc, _| acc + 1));
+                }
+                _ => unreachable!(),
+            };
+            if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
+                stats!(
+                    &p.cmd_opts,
+                    "ixperf",
+                    "incremental periodic-stats\n{}",
+                    lstats
+                );
+                fstats.merge(&lstats);
+                lstats = stats::Ops::new();
+            }
+        }
+        fstats.merge(&lstats);
+        Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64)
+    };
+
+    stats!(&p.cmd_opts, "ixperf", "incremental stats\n{:?}", fstats);
     info!(
         target: "ixperf",
-        "incremental load for type <{},{}>", p.key_type, p.val_type
+        "incremental-load r_ops:{} w_ops:{} map.len:{} elapsed:{:?}",
+        p.g.read_ops(), p.g.write_ops(), index.len(), elapsed
     );
-
-    let mut fstats = stats::Ops::new();
-    let mut lstats = stats::Ops::new();
-    let gen = ConcurrentLoad::<K, V>::new(p.g.clone());
-    for (_i, cmd) in gen.enumerate() {
-        match cmd {
-            Cmd::Set { key, value } => {
-                lstats.set.sample_start(false);
-                let n = index.set(key, value.clone()).map_or(0, |_| 1);
-                lstats.set.sample_end(n);
-            }
-            Cmd::Delete { key } => {
-                lstats.delete.sample_start(false);
-                let items = index.delete(&key).map_or(1, |_| 0);
-                lstats.delete.sample_end(items);
-            }
-            Cmd::Get { key } => {
-                lstats.get.sample_start(false);
-                let items = index.get(&key).map_or(1, |_| 0);
-                lstats.get.sample_end(items);
-            }
-            Cmd::Range { low, high } => {
-                let iter = index.range((low, high));
-                lstats.range.sample_start(true);
-                lstats.range.sample_end(iter.fold(0, |acc, _| acc + 1));
-            }
-            Cmd::Reverse { low, high } => {
-                let iter = index.reverse((low, high));
-                lstats.reverse.sample_start(true);
-                lstats.reverse.sample_end(iter.fold(0, |acc, _| acc + 1));
-            }
-            _ => unreachable!(),
-        };
-        if p.verbose && lstats.is_sec_elapsed() {
-            info!(target: "ixperf", "incremental periodic-stats\n{}", lstats);
-            fstats.merge(&lstats);
-            lstats = stats::Ops::new();
-        }
-    }
-    fstats.merge(&lstats);
-
-    info!(target: "ixperf", "incremental stats\n{:?}", fstats);
 }
 
 fn validate<K, V>(index: Llrb<K, V>, _p: Profile)

@@ -22,7 +22,7 @@ pub fn toml_to_string(val: &toml::Value) -> String {
 
 #[macro_export]
 macro_rules! stats {
-    ($o:expr, $target:expr, $($arg:expr),+) => {
+    ($o:expr, $target:expr, $($arg:tt),+) => {
         if $o.stats {
             debug!(target: $target, $($arg),+);
         }

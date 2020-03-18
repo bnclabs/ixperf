@@ -228,7 +228,7 @@ where
     let elapsed = start.elapsed().unwrap();
     debug!(
         target: "genrtr",
-        "incremental_read: generated {:10} ops in {:?}", total, elapsed
+        "incremental_read: generated {} ops in {:?}", total, elapsed
     );
 }
 
@@ -302,11 +302,11 @@ where
     let elapsed = start.elapsed().unwrap();
     debug!(
         target: "genrtr",
-        "incremental_write: generated {:10} ops in {:?}", total, elapsed
+        "incremental_write: generated {} ops in {:?}", total, elapsed
     );
 }
 
-pub struct ConcurrentLoad<K, V>
+pub struct IncrementalLoad<K, V>
 where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
@@ -315,12 +315,12 @@ where
     rx: mpsc::Receiver<Cmd<K, V>>,
 }
 
-impl<K, V> ConcurrentLoad<K, V>
+impl<K, V> IncrementalLoad<K, V>
 where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
 {
-    pub fn new(g: GenOptions) -> ConcurrentLoad<K, V> {
+    pub fn new(g: GenOptions) -> IncrementalLoad<K, V> {
         let (tx, rx) = if g.channel_size > 0 {
             let (tx, rx) = mpsc::sync_channel(g.channel_size);
             (Tx::S(tx), rx)
@@ -329,12 +329,12 @@ where
             (Tx::N(tx), rx)
         };
 
-        let _thread = { thread::spawn(move || concurrent_load(g, tx)) };
-        ConcurrentLoad { _thread, rx }
+        let _thread = { thread::spawn(move || incremental_load(g, tx)) };
+        IncrementalLoad { _thread, rx }
     }
 }
 
-impl<K, V> Iterator for ConcurrentLoad<K, V>
+impl<K, V> Iterator for IncrementalLoad<K, V>
 where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
@@ -346,7 +346,7 @@ where
     }
 }
 
-fn concurrent_load<K, V>(g: GenOptions, tx: Tx<K, V>)
+fn incremental_load<K, V>(g: GenOptions, tx: Tx<K, V>)
 where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
     V: 'static + Clone + Default + Send + Sync + RandomKV,
@@ -385,7 +385,7 @@ where
     let elapsed = start.elapsed().unwrap();
     debug!(
         target: "genrtr",
-        "concurrent_load: generated {:10} ops in {:?}", total, elapsed
+        "incremental_load: generated {} ops in {:?}", total, elapsed
     );
 }
 

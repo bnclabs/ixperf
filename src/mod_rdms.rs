@@ -15,7 +15,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use crate::generator::{Cmd, ConcurrentLoad, IncrementalRead, IncrementalWrite};
+use crate::generator::{Cmd, IncrementalLoad, IncrementalRead, IncrementalWrite};
 use crate::generator::{InitialLoad, RandomKV};
 use crate::mod_rdms_dgm as mod_dgm;
 use crate::mod_rdms_llrb as mod_llrb;
@@ -240,7 +240,7 @@ where
     let mut r = index.to_reader().unwrap();
     let mut fstats = stats::Ops::new();
     let mut lstats = stats::Ops::new();
-    let gen = ConcurrentLoad::<K, V>::new(p.g.clone());
+    let gen = IncrementalLoad::<K, V>::new(p.g.clone());
     for (_i, cmd) in gen.enumerate() {
         match cmd {
             Cmd::Set { key, value } => {
@@ -270,7 +270,7 @@ where
             }
             _ => unreachable!(),
         };
-        if p.verbose && lstats.is_sec_elapsed() {
+        if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
             info!(target: "ixperf", "incremental periodic-stats\n{}", lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
@@ -302,7 +302,7 @@ where
             }
             _ => unreachable!(),
         };
-        if p.verbose && lstats.is_sec_elapsed() {
+        if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
             info!(target: "ixperf", "initial-{} periodic-stats\n{}", id, lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
@@ -353,7 +353,7 @@ where
             }
             _ => unreachable!(),
         };
-        if p.verbose && lstats.is_sec_elapsed() {
+        if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
             info!(target: "ixperf", "reader-{} periodic-stats\n{}", id, lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
@@ -399,7 +399,7 @@ where
             }
             _ => unreachable!(),
         };
-        if p.verbose && lstats.is_sec_elapsed() {
+        if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
             info!(target: "ixperf", "writer-{} periodic-stats\n{}", id, lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
