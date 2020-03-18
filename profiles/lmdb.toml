@@ -14,13 +14,13 @@ key_size = 64
 # Block size if key-type is vector-of-bytes.
 value_size = 400
 # Total number of initial load operations.
-loads = 10_000_000
+loads = 1_000_000
 # Total number of incremental set operations.
-sets = 10_000_000
+sets = 1_000_000
 # Total number of incremental delete operations.
-deletes = 1_000_000
+deletes = 100_000
 # Total number of get operations, applied after the initial load.
-gets = 10_000_000
+gets = 1_000_000
 # Total number of range iterations between a lower bound and upper bound,
 # applied after the initial load.
 ranges = 0

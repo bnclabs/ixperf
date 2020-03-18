@@ -270,7 +270,7 @@ where
             }
             _ => unreachable!(),
         };
-        if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
+        if lstats.is_sec_elapsed() {
             info!(target: "ixperf", "incremental periodic-stats\n{}", lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
@@ -302,7 +302,7 @@ where
             }
             _ => unreachable!(),
         };
-        if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
+        if lstats.is_sec_elapsed() {
             info!(target: "ixperf", "initial-{} periodic-stats\n{}", id, lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
@@ -353,7 +353,7 @@ where
             }
             _ => unreachable!(),
         };
-        if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
+        if lstats.is_sec_elapsed() {
             info!(target: "ixperf", "reader-{} periodic-stats\n{}", id, lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();
@@ -399,7 +399,7 @@ where
             }
             _ => unreachable!(),
         };
-        if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
+        if lstats.is_sec_elapsed() {
             info!(target: "ixperf", "writer-{} periodic-stats\n{}", id, lstats);
             fstats.merge(&lstats);
             lstats = stats::Ops::new();

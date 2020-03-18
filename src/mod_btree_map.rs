@@ -68,7 +68,7 @@ where
                 }
                 _ => unreachable!(),
             };
-            if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
+            if lstats.is_sec_elapsed() {
                 stats!(&p.cmd_opts, "ixperf", "initial periodic-stats\n{}", lstats);
                 fstats.merge(&lstats);
                 lstats = stats::Ops::new();
@@ -119,7 +119,7 @@ where
                 }
                 _ => unreachable!(),
             };
-            if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
+            if lstats.is_sec_elapsed() {
                 stats!(
                     &p.cmd_opts,
                     "ixperf",

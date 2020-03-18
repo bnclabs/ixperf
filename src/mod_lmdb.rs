@@ -1,5 +1,5 @@
 use lmdb::{self, Cursor, Transaction};
-use log::info;
+use log::{debug, info};
 
 use std::{
     convert::{TryFrom, TryInto},
@@ -76,75 +76,67 @@ impl TryFrom<toml::Value> for LmdbOpt {
 }
 
 pub fn perf(p: Profile) -> Result<(), String> {
-    let mut fstats = {
+    info!(target: "ixperf", "for type <{},{}>", p.key_type, p.val_type);
+
+    {
         let (env, db) = init_lmdb(&p, "lmdb");
-        let start = SystemTime::now();
-        let fstats = do_initial(&p, env, db);
-        let elapsed = {
-            let elapsed = start.elapsed().unwrap().as_nanos() as u64;
-            Duration::from_nanos(elapsed)
-        };
-        let stat = {
-            let (env, _) = open_lmdb(&p, "lmdb");
-            env.stat().unwrap()
-        };
-        info!(
-            target: "ixperf",
-            "initial-load completed {} items in {:?}", stat.entries(), elapsed
-        );
+        do_initial(&p, env, db);
+    }
 
-        fstats
-    };
-
-    let (iter_dur, iter_count) = if p.g.iters {
+    let (iter_elapsed, iter_count) = if p.g.iters {
         let (env, db) = open_lmdb(&p, "lmdb");
         let start = SystemTime::now();
-        let mut iter_count = 0;
-
         let txn = env.begin_ro_txn().unwrap();
         let iter = txn.open_ro_cursor(db).unwrap().iter();
-        for _ in iter {
-            iter_count += 1;
-        }
-        let elapsed = {
-            let elapsed = start.elapsed().unwrap().as_nanos() as u64;
-            Duration::from_nanos(elapsed)
-        };
-        (elapsed, iter_count)
+        let count = iter.map(|_| true).collect::<Vec<bool>>().len();
+        (
+            Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64),
+            count,
+        )
     } else {
-        (Duration::from_nanos(0), 0)
+        (Default::default(), Default::default())
     };
 
     let total_ops = p.g.read_ops() + p.g.write_ops();
-    let (_, mut env, db) = if p.lmdb.concur_threads() == 0 && total_ops > 0 {
+    let (mut env, db) = if p.lmdb.concur_threads() == 0 && total_ops > 0 {
         let (env, db) = open_lmdb(&p, "lmdb");
-
-        fstats.merge(&do_incremental(&p, env, db));
-
+        do_incremental(&p, env, db);
         let (env, db) = open_lmdb(&p, "lmdb");
-        (fstats, Arc::new(env), db)
+        (Arc::new(env), db)
     } else if total_ops > 0 {
         let (env, db) = open_lmdb(&p, "lmdb");
         let env = Arc::new(env);
 
-        let mut threads = vec![];
+        let mut w_threads = vec![];
         for i in 0..p.lmdb.writers {
             let pp = p.clone();
             let envv = Arc::clone(&env);
-            threads.push(thread::spawn(move || do_write(i, pp, envv, db)));
+            w_threads.push(thread::spawn(move || do_write(i, pp, envv, db)));
         }
+        let mut r_threads = vec![];
         for i in 0..p.lmdb.readers {
             let pp = p.clone();
             let envv = Arc::clone(&env);
-            threads.push(thread::spawn(move || do_read(i, pp, envv, db)));
+            r_threads.push(thread::spawn(move || do_read(i, pp, envv, db)));
         }
-        for t in threads {
-            fstats.merge(&t.join().unwrap());
+        {
+            let mut fstats = stats::Ops::new();
+            for t in w_threads {
+                fstats.merge(&t.join().unwrap());
+            }
+            stats!(&p.cmd_opts, "ixperf", "all-writers stats\n{:?}", fstats);
         }
-        (fstats, env, db)
+        {
+            let mut fstats = stats::Ops::new();
+            for t in r_threads {
+                fstats.merge(&t.join().unwrap());
+            }
+            stats!(&p.cmd_opts, "ixperf", "all-readers stats\n{:?}", fstats);
+        }
+        (env, db)
     } else {
         let (env, db) = open_lmdb(&p, "lmdb");
-        (fstats, Arc::new(env), db)
+        (Arc::new(env), db)
     };
 
     unsafe { Arc::get_mut(&mut env).unwrap().close_db(db) };
@@ -153,7 +145,7 @@ pub fn perf(p: Profile) -> Result<(), String> {
     if p.g.iters {
         info!(
             target: "ixperf",
-            "lmdb took {:?} to iter over {} items", iter_dur, iter_count
+            "took {:?} to iter over {} items", iter_elapsed, iter_count
         );
     }
 
@@ -169,46 +161,53 @@ fn do_initial(
         return stats::Ops::new();
     }
 
-    info!(
-        target: "ixperf",
-        "intial load for type <{},{}>", p.key_type, p.val_type
-    );
-
     let mut txn = env.begin_rw_txn().unwrap();
     let write_flags: lmdb::WriteFlags = Default::default();
     let mut load_count = 0;
-
     let mut fstats = stats::Ops::new();
-    let mut lstats = stats::Ops::new();
-    let gen = InitialLoad::<Vec<u8>, Vec<u8>>::new(p.g.clone());
-    for (_i, cmd) in gen.enumerate() {
-        match cmd {
-            Cmd::Load { key, value } => {
-                lstats.load.sample_start(false);
-                txn.put(db, &key, &value, write_flags.clone()).unwrap();
-                lstats.load.sample_end(0);
-                load_count += 1;
+    let elapsed = {
+        let start = SystemTime::now();
+
+        let mut lstats = stats::Ops::new();
+        let gen = InitialLoad::<Vec<u8>, Vec<u8>>::new(p.g.clone());
+        for (_i, cmd) in gen.enumerate() {
+            match cmd {
+                Cmd::Load { key, value } => {
+                    lstats.load.sample_start(false);
+                    txn.put(db, &key, &value, write_flags.clone()).unwrap();
+                    lstats.load.sample_end(0);
+                    load_count += 1;
+                }
+                _ => unreachable!(),
+            };
+            if (load_count % p.lmdb.load_batch) == 0 {
+                txn.commit().unwrap();
+                txn = env.begin_rw_txn().unwrap();
             }
-            _ => unreachable!(),
-        };
-        if (load_count % p.lmdb.load_batch) == 0 {
-            txn.commit().unwrap();
-            txn = env.begin_rw_txn().unwrap();
+            if lstats.is_sec_elapsed() {
+                stats!(&p.cmd_opts, "ixperf", "initial periodic-stats\n{}", lstats);
+                fstats.merge(&lstats);
+                lstats = stats::Ops::new();
+            }
         }
-        if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
-            info!(target: "ixperf", "initial periodic-stats\n{}", lstats);
-            fstats.merge(&lstats);
-            lstats = stats::Ops::new();
-        }
-    }
 
-    txn.commit().unwrap();
+        txn.commit().unwrap();
+        fstats.merge(&lstats);
+        unsafe { env.close_db(db) };
+        env.sync(true).unwrap();
+        Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64)
+    };
 
-    fstats.merge(&lstats);
-    unsafe { env.close_db(db) };
-    env.sync(true).unwrap();
-
-    info!(target: "ixperf", "initial stats\n{:?}\n", fstats);
+    let stat = {
+        let (env, _) = open_lmdb(&p, "lmdb");
+        env.stat().unwrap()
+    };
+    stats!(&p.cmd_opts, "ixperf", "initial stats\n{:?}\n", fstats);
+    info!(
+        target: "ixperf",
+        "initial-load load:{} index.len:{} elapsed:{:?}",
+        p.g.loads, stat.entries(), elapsed
+    );
 
     fstats
 }
@@ -222,80 +221,91 @@ fn do_incremental(
         return stats::Ops::new();
     }
 
+    let write_flags: lmdb::WriteFlags = Default::default();
+    let mut fstats = stats::Ops::new();
+    let elapsed = {
+        let start = SystemTime::now();
+        let mut lstats = stats::Ops::new();
+        let gen = IncrementalLoad::<Vec<u8>, Vec<u8>>::new(p.g.clone());
+        for (_i, cmd) in gen.enumerate() {
+            match cmd {
+                Cmd::Set { key, value } => {
+                    lstats.set.sample_start(false);
+                    let mut txn = env.begin_rw_txn().unwrap();
+                    txn.put(db, &key, &value, write_flags.clone()).unwrap();
+                    txn.commit().unwrap();
+                    lstats.set.sample_end(0);
+                }
+                Cmd::Delete { key } => {
+                    lstats.delete.sample_start(false);
+                    let mut txn = env.begin_rw_txn().unwrap();
+                    let n = match txn.del(db, &key, None /*data*/) {
+                        Ok(_) => 0,
+                        Err(lmdb::Error::NotFound) => 1,
+                        res @ _ => panic!("lmdb del: {:?}", res),
+                    };
+                    txn.commit().unwrap();
+                    lstats.delete.sample_end(n);
+                }
+                Cmd::Get { key } => {
+                    lstats.get.sample_start(false);
+                    let txn = env.begin_ro_txn().unwrap();
+                    let n = match txn.get(db, &key) {
+                        Ok(_) => 0,
+                        Err(lmdb::Error::NotFound) => 1,
+                        Err(err) => panic!(err),
+                    };
+                    lstats.get.sample_end(n);
+                }
+                Cmd::Range { low, high } => {
+                    let txn = env.begin_ro_txn().unwrap();
+                    let mut cur = txn.open_ro_cursor(db).unwrap();
+                    let iter = match low {
+                        Bound::Included(low) => cur.iter_from(low.clone()),
+                        Bound::Excluded(low) => cur.iter_from(low.clone()),
+                        _ => cur.iter(),
+                    };
+
+                    let mut iter_count = 0;
+                    for (key, _) in iter {
+                        match high {
+                            Bound::Included(h) if key.gt(&h) => break,
+                            Bound::Excluded(h) if key.ge(&h) => break,
+                            _ => iter_count += 1,
+                        };
+                    }
+
+                    lstats.range.sample_start(true);
+                    lstats.range.sample_end(iter_count);
+                }
+                Cmd::Reverse { .. } => (),
+                _ => unreachable!(),
+            };
+            if lstats.is_sec_elapsed() {
+                stats!(
+                    p.cmd_opts,
+                    "ixperf",
+                    "incremental periodic-stats\n{}",
+                    lstats
+                );
+                fstats.merge(&lstats);
+                lstats = stats::Ops::new();
+            }
+        }
+        fstats.merge(&lstats);
+        Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64)
+    };
+
+    let stat = {
+        let (env, _) = open_lmdb(&p, "lmdb");
+        env.stat().unwrap()
+    };
+    stats!(&p.cmd_opts, "ixperf", "incremental stats\n{:?}\n", fstats);
     info!(
         target: "ixperf",
-        "incremental load for type <{},{}>", p.key_type, p.val_type
+        "incremental-load r_ops:{} w_ops:{} index.len:{}, elapsed:{:?}",
+        p.g.read_ops(), p.g.write_ops(), stat.entries(), elapsed
     );
-
-    let write_flags: lmdb::WriteFlags = Default::default();
-
-    let mut fstats = stats::Ops::new();
-    let mut lstats = stats::Ops::new();
-    let gen = IncrementalLoad::<Vec<u8>, Vec<u8>>::new(p.g.clone());
-    for (_i, cmd) in gen.enumerate() {
-        match cmd {
-            Cmd::Set { key, value } => {
-                lstats.set.sample_start(false);
-                let mut txn = env.begin_rw_txn().unwrap();
-                txn.put(db, &key, &value, write_flags.clone()).unwrap();
-                txn.commit().unwrap();
-                lstats.set.sample_end(0);
-            }
-            Cmd::Delete { key } => {
-                lstats.delete.sample_start(false);
-                let mut txn = env.begin_rw_txn().unwrap();
-                let n = match txn.del(db, &key, None /*data*/) {
-                    Ok(_) => 0,
-                    Err(lmdb::Error::NotFound) => 1,
-                    res @ _ => panic!("lmdb del: {:?}", res),
-                };
-                txn.commit().unwrap();
-                lstats.delete.sample_end(n);
-            }
-            Cmd::Get { key } => {
-                lstats.get.sample_start(false);
-                let txn = env.begin_ro_txn().unwrap();
-                let n = match txn.get(db, &key) {
-                    Ok(_) => 0,
-                    Err(lmdb::Error::NotFound) => 1,
-                    Err(err) => panic!(err),
-                };
-                lstats.get.sample_end(n);
-            }
-            Cmd::Range { low, high } => {
-                let txn = env.begin_ro_txn().unwrap();
-                let mut cur = txn.open_ro_cursor(db).unwrap();
-                let iter = match low {
-                    Bound::Included(low) => cur.iter_from(low.clone()),
-                    Bound::Excluded(low) => cur.iter_from(low.clone()),
-                    _ => cur.iter(),
-                };
-
-                let mut iter_count = 0;
-                for (key, _) in iter {
-                    match high {
-                        Bound::Included(h) if key.gt(&h) => break,
-                        Bound::Excluded(h) if key.ge(&h) => break,
-                        _ => iter_count += 1,
-                    };
-                }
-
-                lstats.range.sample_start(true);
-                lstats.range.sample_end(iter_count);
-            }
-            Cmd::Reverse { .. } => (),
-            _ => unreachable!(),
-        };
-        if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
-            info!(target: "ixperf", "incremental periodic-stats\n{}", lstats);
-            fstats.merge(&lstats);
-            lstats = stats::Ops::new();
-        }
-    }
-
-    fstats.merge(&lstats);
-
-    info!(target: "ixperf", "incremental stats\n{:?}\n", fstats);
 
     fstats
 }
@@ -310,45 +320,55 @@ fn do_write(
         return stats::Ops::new();
     }
 
-    info!(target: "ixperf", "writer-{} type <{},{}>", i, p.key_type, p.val_type);
-
     let write_flags: lmdb::WriteFlags = Default::default();
-
     let mut fstats = stats::Ops::new();
-    let mut lstats = stats::Ops::new();
-    let gen = IncrementalWrite::<Vec<u8>, Vec<u8>>::new(p.g.clone());
-    for (_i, cmd) in gen.enumerate() {
-        match cmd {
-            Cmd::Set { key, value } => {
-                lstats.set.sample_start(false);
-                let mut txn = env.begin_rw_txn().unwrap();
-                txn.put(db, &key, &value, write_flags.clone()).unwrap();
-                txn.commit().unwrap();
-                lstats.set.sample_end(0);
+    let elapsed = {
+        let start = SystemTime::now();
+        let mut lstats = stats::Ops::new();
+        let gen = IncrementalWrite::<Vec<u8>, Vec<u8>>::new(p.g.clone());
+        for (_i, cmd) in gen.enumerate() {
+            match cmd {
+                Cmd::Set { key, value } => {
+                    lstats.set.sample_start(false);
+                    let mut txn = env.begin_rw_txn().unwrap();
+                    txn.put(db, &key, &value, write_flags.clone()).unwrap();
+                    txn.commit().unwrap();
+                    lstats.set.sample_end(0);
+                }
+                Cmd::Delete { key } => {
+                    lstats.delete.sample_start(false);
+                    let mut txn = env.begin_rw_txn().unwrap();
+                    let n = match txn.del(db, &key, None /*data*/) {
+                        Ok(_) => 0,
+                        Err(lmdb::Error::NotFound) => 1,
+                        res @ _ => panic!("lmdb del: {:?}", res),
+                    };
+                    txn.commit().unwrap();
+                    lstats.delete.sample_end(n);
+                }
+                _ => unreachable!(),
+            };
+            if lstats.is_sec_elapsed() {
+                stats!(
+                    &p.cmd_opts,
+                    "ixperf",
+                    "writer-{} periodic-stats\n{}",
+                    i,
+                    lstats
+                );
+                fstats.merge(&lstats);
+                lstats = stats::Ops::new();
             }
-            Cmd::Delete { key } => {
-                lstats.delete.sample_start(false);
-                let mut txn = env.begin_rw_txn().unwrap();
-                let n = match txn.del(db, &key, None /*data*/) {
-                    Ok(_) => 0,
-                    Err(lmdb::Error::NotFound) => 1,
-                    res @ _ => panic!("lmdb del: {:?}", res),
-                };
-                txn.commit().unwrap();
-                lstats.delete.sample_end(n);
-            }
-            _ => unreachable!(),
-        };
-        if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
-            info!(target: "ixperf", "writer-{} periodic-stats\n{}", i, lstats);
-            fstats.merge(&lstats);
-            lstats = stats::Ops::new();
         }
-    }
+        fstats.merge(&lstats);
+        Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64)
+    };
 
-    fstats.merge(&lstats);
-
-    info!(target: "ixperf", "writer-{} stats\n{:?}\n", i, fstats);
+    stats!(&p.cmd_opts, "ixperf", "writer-{} stats\n{:?}\n", i, fstats);
+    info!(
+        target: "ixperf", "writer-{} w_ops:{} elapsed:{:?}",
+        i, p.g.write_ops(), elapsed
+    );
 
     fstats
 }
@@ -363,57 +383,69 @@ fn do_read(
         return stats::Ops::new();
     }
 
-    info!(target: "ixperf", "reader-{} type <{},{}>", i, p.key_type, p.val_type);
-
     let mut fstats = stats::Ops::new();
-    let mut lstats = stats::Ops::new();
-    let gen = IncrementalRead::<Vec<u8>, Vec<u8>>::new(p.g.clone());
-    for (_i, cmd) in gen.enumerate() {
-        match cmd {
-            Cmd::Get { key } => {
-                lstats.get.sample_start(false);
-                let txn = env.begin_ro_txn().unwrap();
-                let n = match txn.get(db, &key) {
-                    Ok(_) => 0,
-                    Err(lmdb::Error::NotFound) => 1,
-                    Err(err) => panic!(err),
-                };
-                lstats.get.sample_end(n);
-            }
-            Cmd::Range { low, high } => {
-                let txn = env.begin_ro_txn().unwrap();
-                let mut cur = txn.open_ro_cursor(db).unwrap();
-                let iter = match low {
-                    Bound::Included(low) => cur.iter_from(low.clone()),
-                    Bound::Excluded(low) => cur.iter_from(low.clone()),
-                    _ => cur.iter(),
-                };
+    let elapsed = {
+        let start = SystemTime::now();
 
-                let mut iter_count = 0;
-                for (key, _) in iter {
-                    match high {
-                        Bound::Included(h) if key.gt(&h) => break,
-                        Bound::Excluded(h) if key.ge(&h) => break,
-                        _ => iter_count += 1,
+        let mut lstats = stats::Ops::new();
+        let gen = IncrementalRead::<Vec<u8>, Vec<u8>>::new(p.g.clone());
+        for (_i, cmd) in gen.enumerate() {
+            match cmd {
+                Cmd::Get { key } => {
+                    lstats.get.sample_start(false);
+                    let txn = env.begin_ro_txn().unwrap();
+                    let n = match txn.get(db, &key) {
+                        Ok(_) => 0,
+                        Err(lmdb::Error::NotFound) => 1,
+                        Err(err) => panic!(err),
                     };
+                    lstats.get.sample_end(n);
                 }
+                Cmd::Range { low, high } => {
+                    let txn = env.begin_ro_txn().unwrap();
+                    let mut cur = txn.open_ro_cursor(db).unwrap();
+                    let iter = match low {
+                        Bound::Included(low) => cur.iter_from(low.clone()),
+                        Bound::Excluded(low) => cur.iter_from(low.clone()),
+                        _ => cur.iter(),
+                    };
 
-                lstats.range.sample_start(true);
-                lstats.range.sample_end(iter_count);
+                    let mut iter_count = 0;
+                    for (key, _) in iter {
+                        match high {
+                            Bound::Included(h) if key.gt(&h) => break,
+                            Bound::Excluded(h) if key.ge(&h) => break,
+                            _ => iter_count += 1,
+                        };
+                    }
+
+                    lstats.range.sample_start(true);
+                    lstats.range.sample_end(iter_count);
+                }
+                Cmd::Reverse { .. } => (),
+                _ => unreachable!(),
+            };
+            if lstats.is_sec_elapsed() {
+                stats!(
+                    &p.cmd_opts,
+                    "ixperf",
+                    "reader-{} periodic-stats\n{}",
+                    i,
+                    lstats
+                );
+                fstats.merge(&lstats);
+                lstats = stats::Ops::new();
             }
-            Cmd::Reverse { .. } => (),
-            _ => unreachable!(),
-        };
-        if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
-            info!(target: "ixperf", "reader-{} periodic-stats\n{}", i, lstats);
-            fstats.merge(&lstats);
-            lstats = stats::Ops::new();
         }
-    }
+        fstats.merge(&lstats);
+        Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64)
+    };
 
-    fstats.merge(&lstats);
-
-    info!(target: "ixperf", "reader-{} stats\n{:?}\n", i, fstats);
+    stats!(&p.cmd_opts, "ixperf", "reader-{} stats\n{:?}\n", i, fstats);
+    info!(
+        target: "ixperf", "reader-{} r_ops:{} elapsed:{:?}",
+        i, p.g.read_ops(), elapsed
+    );
 
     fstats
 }

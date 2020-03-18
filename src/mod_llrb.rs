@@ -44,13 +44,16 @@ where
 
     do_initial_load(&mut index, &p);
 
-    let iter_elapsed = {
+    let (iter_elapsed, iter_count) = if p.g.iters {
         let start = SystemTime::now();
-        if p.g.iters {
-            let count = index.iter().map(|_| 1).collect::<Vec<u8>>().len();
-            assert_eq!(count, index.len());
-        }
-        Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64)
+        let count = index.iter().map(|_| 1).collect::<Vec<u8>>().len();
+        assert_eq!(count, index.len());
+        (
+            Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64),
+            count,
+        )
+    } else {
+        (Default::default(), Default::default())
     };
 
     do_incremental(&mut index, &p);
@@ -58,7 +61,7 @@ where
     if p.g.iters {
         info!(
             target: "ixperf",
-            "took {:?} to iter over {} items", iter_elapsed, index.len()
+            "took {:?} to iter over {} items", iter_elapsed, iter_count
         );
     }
 
@@ -90,7 +93,7 @@ where
                 }
                 _ => unreachable!(),
             };
-            if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
+            if lstats.is_sec_elapsed() {
                 stats!(&p.cmd_opts, "ixperf", "initial periodic-stats\n{}", lstats);
                 fstats.merge(&lstats);
                 lstats = stats::Ops::new();
@@ -153,7 +156,7 @@ where
                 }
                 _ => unreachable!(),
             };
-            if p.cmd_opts.verbose && lstats.is_sec_elapsed() {
+            if lstats.is_sec_elapsed() {
                 stats!(
                     &p.cmd_opts,
                     "ixperf",
