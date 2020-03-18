@@ -1,4 +1,4 @@
-use log::info;
+use log::{debug, info};
 
 use rdms::{
     self,
@@ -135,51 +135,62 @@ where
     <I as Index<K, V>>::R: 'static + Send + Sync,
     <I as Index<K, V>>::W: 'static + Send + Sync,
 {
-    let start = SystemTime::now();
     let mut fstats = do_initial_load(index, &p);
-    let dur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
-    info!(target: "ixperf", "initial-load completed in {:?}", dur);
 
-    let (start, mut iter_count) = (SystemTime::now(), 0);
-    if p.g.iters {
+    let (iter_elapsed, iter_count) = if p.g.iters {
+        let start = SystemTime::now();
         let mut r = index.to_reader().unwrap();
-        for _ in r.iter().unwrap() {
-            iter_count += 1
-        }
-    }
-    let idur = Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64);
+        let count = r.iter().unwrap().map(|_| true).collect::<Vec<bool>>().len();
+        (
+            Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64),
+            count,
+        )
+    } else {
+        (Default::default(), Default::default())
+    };
 
     let total_ops = p.g.read_ops() + p.g.write_ops();
-    let fstats = if p.rdms.concur_threads() == 0 && total_ops > 0 {
-        fstats.merge(&do_incremental(index, &p));
-        fstats
+    if p.rdms.concur_threads() == 0 && total_ops > 0 {
+        fstats.merge(&do_incremental(index, &p))
     } else if (p.g.read_ops() + p.g.write_ops()) > 0 {
-        let mut threads = vec![];
+        let mut w_threads = vec![];
         for i in 0..p.rdms.writers {
             let w = index.to_writer().unwrap();
             let pr = p.clone();
-            threads.push(thread::spawn(move || do_write(i, w, pr)));
+            w_threads.push(thread::spawn(move || do_write(i, w, pr)));
         }
+        let mut r_threads = vec![];
         for i in 0..p.rdms.readers {
             let r = index.to_reader().unwrap();
             let pr = p.clone();
-            threads.push(thread::spawn(move || do_read(i, r, pr)));
+            r_threads.push(thread::spawn(move || do_read(i, r, pr)));
         }
-        for t in threads {
-            fstats.merge(&t.join().unwrap());
-        }
-        fstats
-    } else {
-        fstats
-    };
+
+        fstats.merge(&{
+            let mut fstats = stats::Ops::new();
+            for t in w_threads {
+                fstats.merge(&t.join().unwrap());
+            }
+            stats!(&p.cmd_opts, "ixperf", "all-writers stats\n{:?}", fstats);
+            fstats
+        });
+        fstats.merge(&{
+            let mut fstats = stats::Ops::new();
+            for t in r_threads {
+                fstats.merge(&t.join().unwrap());
+            }
+            stats!(&p.cmd_opts, "ixperf", "all-readers stats\n{:?}", fstats);
+            fstats
+        });
+    }
 
     if p.g.iters {
         info!(
             target: "ixperf",
-            "rdms took {:?} to iter over {} items", idur, iter_count
+            "took {:?} to iter over {} items", iter_elapsed, iter_count
         );
     }
-    info!(target: "ixperf", "concurrent stats\n{:?}", fstats);
+
     fstats
 }
 
@@ -198,11 +209,6 @@ where
     }
 
     let n_threads = p.rdms.initial_threads();
-    info!(
-        target: "ixperf",
-        "initial load for type <{},{}> {} threads",
-        p.key_type, p.val_type, n_threads
-    );
 
     let mut threads = vec![];
     for i in 0..n_threads {
@@ -210,11 +216,62 @@ where
         let pr = p.clone();
         threads.push(thread::spawn(move || do_initial(i, w, pr)));
     }
+
     let mut fstats = stats::Ops::new();
     for t in threads {
         fstats.merge(&t.join().unwrap());
     }
-    info!(target: "ixperf", "initial stats\n{:?}\n", fstats);
+
+    stats!(&p.cmd_opts, "ixperf", "initial stats\n{:?}\n", fstats);
+    fstats
+}
+
+fn do_initial<W, K, V>(id: usize, mut w: W, mut p: Profile) -> stats::Ops
+where
+    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
+    V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
+    W: Writer<K, V>,
+{
+    p.g.seed += (id * 100) as u128; // change the seed
+
+    let mut fstats = stats::Ops::new();
+    let elapsed = {
+        let start = SystemTime::now();
+
+        let mut lstats = stats::Ops::new();
+        let gen = InitialLoad::<K, V>::new(p.g.clone());
+        for (_i, cmd) in gen.enumerate() {
+            match cmd {
+                Cmd::Load { key, value } => {
+                    lstats.load.sample_start(false);
+                    let items = w.set(key, value).unwrap().map_or(0, |_| 1);
+                    lstats.load.sample_end(items);
+                }
+                _ => unreachable!(),
+            };
+            if lstats.is_sec_elapsed() {
+                stats!(
+                    &p.cmd_opts,
+                    "ixperf",
+                    "initial-{} periodic-stats\n{}",
+                    id,
+                    lstats
+                );
+                fstats.merge(&lstats);
+                lstats = stats::Ops::new();
+            }
+        }
+        fstats.merge(&lstats);
+
+        Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64)
+    };
+
+    stats!(&p.cmd_opts, "ixperf", "initial-{} stats\n{:?}", id, fstats);
+    info!(
+        target: "ixperf", "initial-{} load_ops:{} elapsed:{:?}",
+        id, p.g.loads, elapsed
+    );
+
     fstats
 }
 
@@ -231,137 +288,65 @@ where
         return stats::Ops::new();
     }
 
-    info!(
-        target: "ixperf",
-        "incremental load for type <{},{}>", p.key_type, p.val_type
-    );
-
     let mut w = index.to_writer().unwrap();
     let mut r = index.to_reader().unwrap();
     let mut fstats = stats::Ops::new();
-    let mut lstats = stats::Ops::new();
-    let gen = IncrementalLoad::<K, V>::new(p.g.clone());
-    for (_i, cmd) in gen.enumerate() {
-        match cmd {
-            Cmd::Set { key, value } => {
-                lstats.set.sample_start(false);
-                let n = w.set(key, value.clone()).unwrap().map_or(0, |_| 1);
-                lstats.set.sample_end(n);
+    let elapsed = {
+        let start = SystemTime::now();
+
+        let mut lstats = stats::Ops::new();
+        let gen = IncrementalLoad::<K, V>::new(p.g.clone());
+        for (_i, cmd) in gen.enumerate() {
+            match cmd {
+                Cmd::Set { key, value } => {
+                    lstats.set.sample_start(false);
+                    let n = w.set(key, value.clone()).unwrap().map_or(0, |_| 1);
+                    lstats.set.sample_end(n);
+                }
+                Cmd::Delete { key } => {
+                    lstats.delete.sample_start(false);
+                    let items = w.delete(&key).unwrap().map_or(1, |_| 0);
+                    lstats.delete.sample_end(items);
+                }
+                Cmd::Get { key } => {
+                    lstats.get.sample_start(false);
+                    let items = r.get(&key).ok().map_or(1, |_| 0);
+                    lstats.get.sample_end(items);
+                }
+                Cmd::Range { low, high } => {
+                    let iter = r.range((low, high)).unwrap();
+                    lstats.range.sample_start(true);
+                    lstats.range.sample_end(iter.fold(0, |acc, _| acc + 1));
+                }
+                Cmd::Reverse { low, high } => {
+                    let iter = r.reverse((low, high)).unwrap();
+                    lstats.reverse.sample_start(true);
+                    lstats.reverse.sample_end(iter.fold(0, |acc, _| acc + 1));
+                }
+                _ => unreachable!(),
+            };
+            if lstats.is_sec_elapsed() {
+                stats!(
+                    &p.cmd_opts,
+                    "ixperf",
+                    "incremental periodic-stats\n{}",
+                    lstats
+                );
+                fstats.merge(&lstats);
+                lstats = stats::Ops::new();
             }
-            Cmd::Delete { key } => {
-                lstats.delete.sample_start(false);
-                let items = w.delete(&key).unwrap().map_or(1, |_| 0);
-                lstats.delete.sample_end(items);
-            }
-            Cmd::Get { key } => {
-                lstats.get.sample_start(false);
-                let items = r.get(&key).ok().map_or(1, |_| 0);
-                lstats.get.sample_end(items);
-            }
-            Cmd::Range { low, high } => {
-                let iter = r.range((low, high)).unwrap();
-                lstats.range.sample_start(true);
-                lstats.range.sample_end(iter.fold(0, |acc, _| acc + 1));
-            }
-            Cmd::Reverse { low, high } => {
-                let iter = r.reverse((low, high)).unwrap();
-                lstats.reverse.sample_start(true);
-                lstats.reverse.sample_end(iter.fold(0, |acc, _| acc + 1));
-            }
-            _ => unreachable!(),
-        };
-        if lstats.is_sec_elapsed() {
-            info!(target: "ixperf", "incremental periodic-stats\n{}", lstats);
-            fstats.merge(&lstats);
-            lstats = stats::Ops::new();
         }
-    }
-    fstats.merge(&lstats);
+        fstats.merge(&lstats);
+        Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64)
+    };
 
-    info!(target: "ixperf", "incremental stats\n{:?}", fstats);
-    fstats
-}
-
-fn do_initial<W, K, V>(id: usize, mut w: W, mut p: Profile) -> stats::Ops
-where
-    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
-    W: Writer<K, V>,
-{
-    p.g.seed += (id * 100) as u128; // change the seed
-
-    let mut fstats = stats::Ops::new();
-    let mut lstats = stats::Ops::new();
-    let gen = InitialLoad::<K, V>::new(p.g.clone());
-    for (_i, cmd) in gen.enumerate() {
-        match cmd {
-            Cmd::Load { key, value } => {
-                lstats.load.sample_start(false);
-                let items = w.set(key, value).unwrap().map_or(0, |_| 1);
-                lstats.load.sample_end(items);
-            }
-            _ => unreachable!(),
-        };
-        if lstats.is_sec_elapsed() {
-            info!(target: "ixperf", "initial-{} periodic-stats\n{}", id, lstats);
-            fstats.merge(&lstats);
-            lstats = stats::Ops::new();
-        }
-    }
-    fstats.merge(&lstats);
-
-    info!(target: "ixperf", "initial-{} stats\n{:?}", id, fstats);
-    fstats
-}
-
-pub(crate) fn do_read<R, K, V>(id: usize, mut r: R, mut p: Profile) -> stats::Ops
-where
-    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV + Hash,
-    V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
-    R: Reader<K, V>,
-{
-    p.g.seed += (id * 100) as u128; // change the seed
-
-    if p.g.read_ops() == 0 {
-        return stats::Ops::new();
-    }
-
+    stats!(&p.cmd_opts, "ixperf", "incremental stats\n{:?}", fstats);
     info!(
         target: "ixperf",
-        "reader-{} for type <{},{}>", id, p.key_type, p.val_type
+        "incremental-load r_ops:{} w_ops:{} elapsed:{:?}",
+        p.g.read_ops(), p.g.write_ops(), elapsed
     );
 
-    let mut fstats = stats::Ops::new();
-    let mut lstats = stats::Ops::new();
-    let gen = IncrementalRead::<K, V>::new(p.g.clone());
-    for (_i, cmd) in gen.enumerate() {
-        match cmd {
-            Cmd::Get { key } => {
-                lstats.get.sample_start(false);
-                let items = r.get(&key).ok().map_or(1, |_| 0);
-                lstats.get.sample_end(items);
-            }
-            Cmd::Range { low, high } => {
-                let iter = r.range((low, high)).unwrap();
-                lstats.range.sample_start(true);
-                lstats.range.sample_end(iter.fold(0, |acc, _| acc + 1));
-            }
-            Cmd::Reverse { low, high } => {
-                let iter = r.reverse((low, high)).unwrap();
-                lstats.reverse.sample_start(true);
-                lstats.reverse.sample_end(iter.fold(0, |acc, _| acc + 1));
-            }
-            _ => unreachable!(),
-        };
-        if lstats.is_sec_elapsed() {
-            info!(target: "ixperf", "reader-{} periodic-stats\n{}", id, lstats);
-            fstats.merge(&lstats);
-            lstats = stats::Ops::new();
-        }
-    }
-    fstats.merge(&lstats);
-
-    info!(target: "ixperf", "reader-{} stats {:?}", id, fstats);
     fstats
 }
 
@@ -377,36 +362,110 @@ where
         return stats::Ops::new();
     }
 
+    let mut fstats = stats::Ops::new();
+    let elapsed = {
+        let start = SystemTime::now();
+
+        let mut lstats = stats::Ops::new();
+        let gen = IncrementalWrite::<K, V>::new(p.g.clone());
+        for (_i, cmd) in gen.enumerate() {
+            match cmd {
+                Cmd::Set { key, value } => {
+                    lstats.set.sample_start(false);
+                    let n = w.set(key, value.clone()).unwrap().map_or(0, |_| 1);
+                    lstats.set.sample_end(n);
+                }
+                Cmd::Delete { key } => {
+                    lstats.delete.sample_start(false);
+                    let items = w.delete(&key).unwrap().map_or(1, |_| 0);
+                    lstats.delete.sample_end(items);
+                }
+                _ => unreachable!(),
+            };
+            if lstats.is_sec_elapsed() {
+                stats!(
+                    &p.cmd_opts,
+                    "ixperf",
+                    "writer-{} periodic-stats\n{}",
+                    id,
+                    lstats
+                );
+                fstats.merge(&lstats);
+                lstats = stats::Ops::new();
+            }
+        }
+        fstats.merge(&lstats);
+        Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64)
+    };
+
+    stats!(&p.cmd_opts, "ixperf", "writer-{} stats\n{:?}", id, fstats);
     info!(
-        target: "ixperf",
-        "writer-{} for type <{},{}>", id, p.key_type, p.val_type
+        target: "ixperf", "writer-{} w_ops:{} elapsed:{:?}",
+        id, p.g.write_ops(), elapsed
     );
 
-    let mut fstats = stats::Ops::new();
-    let mut lstats = stats::Ops::new();
-    let gen = IncrementalWrite::<K, V>::new(p.g.clone());
-    for (_i, cmd) in gen.enumerate() {
-        match cmd {
-            Cmd::Set { key, value } => {
-                lstats.set.sample_start(false);
-                let n = w.set(key, value.clone()).unwrap().map_or(0, |_| 1);
-                lstats.set.sample_end(n);
-            }
-            Cmd::Delete { key } => {
-                lstats.delete.sample_start(false);
-                let items = w.delete(&key).unwrap().map_or(1, |_| 0);
-                lstats.delete.sample_end(items);
-            }
-            _ => unreachable!(),
-        };
-        if lstats.is_sec_elapsed() {
-            info!(target: "ixperf", "writer-{} periodic-stats\n{}", id, lstats);
-            fstats.merge(&lstats);
-            lstats = stats::Ops::new();
-        }
-    }
-    fstats.merge(&lstats);
+    fstats
+}
 
-    info!(target: "ixperf", "writer-{} stats\n{:?}", id, fstats);
+pub(crate) fn do_read<R, K, V>(id: usize, mut r: R, mut p: Profile) -> stats::Ops
+where
+    K: 'static + Clone + Default + Send + Sync + Ord + Footprint + RandomKV + Hash,
+    V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
+    R: Reader<K, V>,
+{
+    p.g.seed += (id * 100) as u128; // change the seed
+
+    if p.g.read_ops() == 0 {
+        return stats::Ops::new();
+    }
+
+    let mut fstats = stats::Ops::new();
+    let elapsed = {
+        let start = SystemTime::now();
+
+        let mut lstats = stats::Ops::new();
+        let gen = IncrementalRead::<K, V>::new(p.g.clone());
+        for (_i, cmd) in gen.enumerate() {
+            match cmd {
+                Cmd::Get { key } => {
+                    lstats.get.sample_start(false);
+                    let items = r.get(&key).ok().map_or(1, |_| 0);
+                    lstats.get.sample_end(items);
+                }
+                Cmd::Range { low, high } => {
+                    let iter = r.range((low, high)).unwrap();
+                    lstats.range.sample_start(true);
+                    lstats.range.sample_end(iter.fold(0, |acc, _| acc + 1));
+                }
+                Cmd::Reverse { low, high } => {
+                    let iter = r.reverse((low, high)).unwrap();
+                    lstats.reverse.sample_start(true);
+                    lstats.reverse.sample_end(iter.fold(0, |acc, _| acc + 1));
+                }
+                _ => unreachable!(),
+            };
+            if lstats.is_sec_elapsed() {
+                stats!(
+                    &p.cmd_opts,
+                    "ixperf",
+                    "reader-{} periodic-stats\n{}",
+                    id,
+                    lstats
+                );
+                fstats.merge(&lstats);
+                lstats = stats::Ops::new();
+            }
+        }
+        fstats.merge(&lstats);
+
+        Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64)
+    };
+
+    stats!(&p.cmd_opts, "ixperf", "reader-{} stats\n{:?}", id, fstats);
+    info!(
+        target: "ixperf", "reader-{} r_ops:{} elapsed:{:?}",
+        id, p.g.read_ops(), elapsed
+    );
+
     fstats
 }

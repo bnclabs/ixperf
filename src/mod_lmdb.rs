@@ -202,7 +202,7 @@ fn do_initial(
         let (env, _) = open_lmdb(&p, "lmdb");
         env.stat().unwrap()
     };
-    stats!(&p.cmd_opts, "ixperf", "initial stats\n{:?}\n", fstats);
+    stats!(&p.cmd_opts, "ixperf", "initial stats\n{:?}", fstats);
     info!(
         target: "ixperf",
         "initial-load load:{} index.len:{} elapsed:{:?}",
@@ -300,7 +300,7 @@ fn do_incremental(
         let (env, _) = open_lmdb(&p, "lmdb");
         env.stat().unwrap()
     };
-    stats!(&p.cmd_opts, "ixperf", "incremental stats\n{:?}\n", fstats);
+    stats!(&p.cmd_opts, "ixperf", "incremental stats\n{:?}", fstats);
     info!(
         target: "ixperf",
         "incremental-load r_ops:{} w_ops:{} index.len:{}, elapsed:{:?}",
@@ -364,7 +364,7 @@ fn do_write(
         Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64)
     };
 
-    stats!(&p.cmd_opts, "ixperf", "writer-{} stats\n{:?}\n", i, fstats);
+    stats!(&p.cmd_opts, "ixperf", "writer-{} stats\n{:?}", i, fstats);
     info!(
         target: "ixperf", "writer-{} w_ops:{} elapsed:{:?}",
         i, p.g.write_ops(), elapsed
@@ -441,7 +441,7 @@ fn do_read(
         Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64)
     };
 
-    stats!(&p.cmd_opts, "ixperf", "reader-{} stats\n{:?}\n", i, fstats);
+    stats!(&p.cmd_opts, "ixperf", "reader-{} stats\n{:?}", i, fstats);
     info!(
         target: "ixperf", "reader-{} r_ops:{} elapsed:{:?}",
         i, p.g.read_ops(), elapsed

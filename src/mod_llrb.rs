@@ -103,7 +103,7 @@ where
         Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64)
     };
 
-    stats!(&p.cmd_opts, "ixperf", "initial stats\n{:?}\n", fstats);
+    stats!(&p.cmd_opts, "ixperf", "initial stats\n{:?}", fstats);
     info!(
         target: "ixperf",
         "initial-load load:{} index.len:{} elapsed:{:?}",
