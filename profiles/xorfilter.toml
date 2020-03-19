@@ -14,9 +14,9 @@ value_size = 400
 # Seed for randomization.
 seed = 0
 # Total number of initial load operations.
-loads = 1000_000_000
+loads = 100_000_000
 # Total number of get operations.
-gets = 1000_000_000
+gets = 100_000_000
 # Channel size to use between generator thread and loader thread.
 channel_size = 0
 
