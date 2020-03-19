@@ -1,0 +1,24 @@
+[ixperf]
+# Index-type to benchmark.
+index = "xorfilter"
+# Key-type for the index.
+key_type = "array"
+# Value-type for the index
+value_type = "array"
+
+[generator]
+# Block size if key-type is vector-of-bytes.
+key_size = 20
+# Block size if key-type is vector-of-bytes.
+value_size = 400
+# Seed for randomization.
+seed = 0
+# Total number of initial load operations.
+loads = 1000_000_000
+# Total number of get operations.
+gets = 1000_000_000
+# Channel size to use between generator thread and loader thread.
+channel_size = 0
+
+[xorfilter]
+# no options other than the [ixperf]

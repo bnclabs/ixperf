@@ -482,6 +482,21 @@ impl RandomKV for i64 {
     }
 }
 
+impl RandomKV for u64 {
+    fn gen_key(&self, rng: &mut SmallRng, g: &GenOptions) -> u64 {
+        let limit = (g.loads * std::cmp::max(g.initial, 1)) as u64;
+        rng.gen::<u64>() % limit
+    }
+
+    fn gen_val(&self, rng: &mut SmallRng, _g: &GenOptions) -> u64 {
+        rng.gen()
+    }
+
+    fn next(&self, _g: &GenOptions) -> u64 {
+        *self + 1
+    }
+}
+
 impl RandomKV for [u8; 32] {
     fn gen_key(&self, rng: &mut SmallRng, g: &GenOptions) -> [u8; 32] {
         let limit = (g.loads * std::cmp::max(g.initial, 1)) as i64;
@@ -564,7 +579,8 @@ pub struct IterKeys<K>
 where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
 {
-    from: K,
+    key: K,
+    rng: SmallRng,
     g: GenOptions,
 }
 
@@ -573,8 +589,13 @@ where
     K: 'static + Clone + Default + Send + Sync + RandomKV,
 {
     #[allow(dead_code)]
-    fn new(from: K, g: &GenOptions) -> IterKeys<K> {
-        IterKeys { from, g: g.clone() }
+    pub(crate) fn new(g: &GenOptions) -> IterKeys<K> {
+        let rng = SmallRng::from_seed(g.seed.to_le_bytes());
+        IterKeys {
+            key: Default::default(),
+            rng,
+            g: g.clone(),
+        }
     }
 }
 
@@ -585,7 +606,7 @@ where
     type Item = K;
 
     fn next(&mut self) -> Option<Self::Item> {
-        Some(self.from.next(&self.g))
+        Some(self.key.gen_key(&mut self.rng, &self.g))
     }
 }
 

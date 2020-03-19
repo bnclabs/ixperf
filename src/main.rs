@@ -23,6 +23,7 @@ mod mod_rdms_llrb;
 mod mod_rdms_mvcc;
 mod mod_rdms_robt;
 mod mod_rdms_shllrb;
+mod mod_xorfilter;
 mod plot;
 mod stats;
 #[macro_use]
@@ -128,6 +129,7 @@ fn do_main() -> Result<(), String> {
         "llrb-index" => mod_llrb::perf("ixperf", p),
         "btree-map" => mod_btree_map::perf("ixperf", p),
         "lmdb" => mod_lmdb::perf(p),
+        "xorfilter" => mod_xorfilter::perf(p),
         "rdms" => mod_rdms::do_rdms_index(p),
         _ => Err(format!("unsupported index-type {}", p.index)),
     };
