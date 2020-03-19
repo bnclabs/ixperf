@@ -285,24 +285,25 @@ impl TryFrom<toml::Value> for Profile {
 }
 
 fn system_stats() {
-    use sysinfo::{ProcessorExt, System, SystemExt};
+    use sysinfo::{ProcessExt, System, SystemExt};
 
     let opts = Opt::from_args();
     let mut sys = System::new();
 
     loop {
         thread::sleep(time::Duration::from_secs(1));
-        sys.refresh_system();
+        sys.refresh_processes();
+        for (_pid, p) in sys.get_processes() {
+            if p.name() != "ixperf" {
+                continue;
+            }
+            let cpu = p.cpu_usage();
+            let memory = p.memory() / 1024;
 
-        let mut cpu_load = 0_f32;
-        for cpu in sys.get_processor_list() {
-            cpu_load += cpu.get_cpu_usage();
+            let line = format!("system = {{ cpu_load={}, mem_rss={} }}", cpu, memory);
+            stats!(opts, "ixperf", "system periodic-stats\n{}", line);
+            break;
         }
-        let cpu_load = (cpu_load * 100_f32) as u64;
-        let mem_rss = sys.get_used_memory() / 1024;
-
-        let line = format!("system = {{ cpu_load={}, mem_rss={} }}", cpu_load, mem_rss);
-        stats!(opts, "ixperf", "system periodic-stats\n{}", line);
     }
 }
 
