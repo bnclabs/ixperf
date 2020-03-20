@@ -8,7 +8,8 @@ use rdms::{
         Serialize, Validate, Writer,
     },
     llrb::Llrb,
-    robt::{self, Robt, RobtFactory},
+    robt,
+    shrobt::{self, ShRobt, ShrobtFactory},
 };
 
 use std::{
@@ -27,7 +28,9 @@ use crate::stats;
 use crate::Profile;
 
 #[derive(Default, Clone)]
-pub struct RobtOpt {
+pub struct ShrobtOpt {
+    pub num_shards: usize,
+
     pub dir: ffi::OsString,
     pub z_blocksize: usize,
     pub m_blocksize: usize,
@@ -41,18 +44,19 @@ pub struct RobtOpt {
     pub bitmap: String,
 }
 
-impl TryFrom<toml::Value> for RobtOpt {
+impl TryFrom<toml::Value> for ShrobtOpt {
     type Error = String;
 
     fn try_from(value: toml::Value) -> Result<Self, Self::Error> {
-        let mut opt: RobtOpt = Default::default();
+        let mut opt: ShrobtOpt = Default::default();
 
-        let section = match &value.get("rdms-robt") {
+        let section = match &value.get("rdms-shrobt") {
             None => return Err("not found".to_string()),
             Some(section) => section.clone(),
         };
         for (name, value) in section.as_table().unwrap().iter() {
             match name.as_str() {
+                "num_shards" => opt.num_shards = value.as_integer().unwrap().try_into().unwrap(),
                 "dir" => {
                     let dir: &ffi::OsStr = value.as_str().unwrap().as_ref();
                     opt.dir = dir.to_os_string();
@@ -80,21 +84,21 @@ impl TryFrom<toml::Value> for RobtOpt {
     }
 }
 
-impl RobtOpt {
-    fn new<K, V, B>(&self, name: &str) -> Robt<K, V, B>
+impl ShrobtOpt {
+    fn new<K, V, B>(&self, name: &str) -> ShRobt<K, V, B>
     where
         K: 'static + Default + Clone + Ord + Send + Hash + Footprint + Serialize,
-        V: Clone + Default + Diff + Footprint + Serialize,
+        V: 'static + Clone + Default + Send + Diff + Footprint + Serialize,
         <V as Diff>::D: Default + Serialize,
-        B: 'static + Send + Bloom,
+        B: 'static + Sync + Send + Bloom,
     {
         self.new_factory(name).new(&self.dir, name).unwrap()
     }
 
-    pub(crate) fn new_factory<K, V, B>(&self, _name: &str) -> RobtFactory<K, V, B>
+    pub(crate) fn new_factory<K, V, B>(&self, _name: &str) -> ShrobtFactory<K, V, B>
     where
         K: 'static + Default + Clone + Ord + Send + Hash + Footprint + Serialize,
-        V: Clone + Default + Diff + Footprint + Serialize,
+        V: 'static + Clone + Default + Send + Diff + Footprint + Serialize,
         <V as Diff>::D: Default + Serialize,
         B: 'static + Send + Bloom,
     {
@@ -110,7 +114,7 @@ impl RobtOpt {
             .unwrap();
         config.set_flush_queue_size(self.flush_queue_size).unwrap();
 
-        robt::robt_factory(config)
+        shrobt::shrobt_factory(config, self.num_shards, self.mmap)
     }
 
     pub(crate) fn to_bitmap(&self) -> &str {
@@ -135,18 +139,18 @@ where
     <V as Diff>::D: Send + Default + Serialize,
     B: 'static + Bloom + Send + Sync,
 {
-    let robt_index = p.rdms_robt.new(name);
-    let mut index = rdms::Rdms::new(name, robt_index).unwrap();
+    let srindex = p.rdms_shrobt.new(name);
+    let mut index = rdms::Rdms::new(name, srindex).unwrap();
 
     // load initial data.
     let mut fstats = stats::Ops::new();
     let mut rng = SmallRng::from_seed(p.g.seed.to_le_bytes());
     let mut seqno = 0;
     for i in 0..(p.g.loads / p.g.write_ops()) {
-        let mut mem_index = if p.rdms_robt.delta_ok {
-            Llrb::new_lsm("load-robt")
+        let mut mem_index = if p.rdms_shrobt.delta_ok {
+            Llrb::new_lsm("load-shrobt")
         } else {
-            Llrb::new("load-robt")
+            Llrb::new("load-shrobt")
         };
         mem_index.set_sticky(rng.gen::<bool>()).unwrap();
         mem_index.set_seqno(seqno).unwrap();
@@ -183,9 +187,10 @@ where
 
     // validate
     let mut r = index.to_reader().unwrap();
-    validate_robt::<K, V, B>(&mut r, &fstats, &p);
+    validate_shrobt::<K, V, B>(&mut index, &mut r, &fstats, &p);
 
     // optional iteration
+    let mut r = index.to_reader().unwrap();
     let (start, mut iter_count) = (SystemTime::now(), 0);
     if p.g.iters {
         for _ in r.iter().unwrap() {
@@ -198,8 +203,7 @@ where
     let mut fstats = stats::Ops::new();
     let mut threads = vec![];
     for i in 0..p.rdms.readers {
-        let mut r = index.to_reader().unwrap();
-        r.set_mmap(p.rdms_robt.mmap).unwrap();
+        let r = index.to_reader().unwrap();
         let pr = p.clone();
         threads.push(thread::spawn(move || mod_rdms::do_read(i, r, pr)));
     }
@@ -216,17 +220,21 @@ where
     info!(target: "ixperf", "concurrent stats\n{:?}", fstats);
 }
 
-fn validate_robt<K, V, B>(r: &mut robt::Snapshot<K, V, B>, fstats: &stats::Ops, p: &Profile)
-where
-    K: Clone + Ord + Default + Footprint + Serialize + fmt::Debug + RandomKV,
-    V: Clone + Diff + Default + Footprint + Serialize + RandomKV,
+fn validate_shrobt<K, V, B>(
+    index: &mut rdms::Rdms<K, V, shrobt::ShRobt<K, V, B>>,
+    r: &mut shrobt::ShrobtReader<K, V, B>,
+    fstats: &stats::Ops,
+    p: &Profile,
+) where
+    K: Clone + Ord + Default + Send + Hash + Footprint + Serialize + fmt::Debug + RandomKV,
+    V: Clone + Send + Default + Diff + Footprint + Serialize + RandomKV,
     <V as Diff>::D: Default + Clone + Serialize,
-    B: Bloom,
+    B: Send + Sync + Bloom,
 {
-    info!(target: "ixperf", "validating robt index ...");
+    info!(target: "ixperf", "validating shrobt index ...");
 
-    let stats: robt::Stats = r.validate().unwrap();
-    if p.rdms_robt.delta_ok {
+    let stats: robt::Stats = index.validate().unwrap();
+    if p.rdms_shrobt.delta_ok {
         let (mut n_muts, iter) = (0, r.iter_with_versions().unwrap());
         for entry in iter {
             let entry = entry.unwrap();

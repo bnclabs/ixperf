@@ -22,6 +22,7 @@ use crate::mod_rdms_llrb as mod_llrb;
 use crate::mod_rdms_mvcc as mod_mvcc;
 use crate::mod_rdms_robt as mod_robt;
 use crate::mod_rdms_shllrb as mod_shllrb;
+use crate::mod_rdms_shrobt as mod_shrobt;
 use crate::stats;
 use crate::Profile;
 
@@ -119,6 +120,11 @@ where
         "robt" => match p.rdms_robt.to_bitmap() {
             "nobitmap" => mod_robt::perf::<K, V, NoBitmap>(name, p),
             "croaring" => mod_robt::perf::<K, V, CRoaring>(name, p),
+            bitmap => panic!("unsupported bitmap {}", bitmap),
+        },
+        "shrobt" => match p.rdms_shrobt.to_bitmap() {
+            "nobitmap" => mod_shrobt::perf::<K, V, NoBitmap>(name, p),
+            "croaring" => mod_shrobt::perf::<K, V, CRoaring>(name, p),
             bitmap => panic!("unsupported bitmap {}", bitmap),
         },
         "shllrb" => mod_shllrb::perf::<K, V>(name, p),

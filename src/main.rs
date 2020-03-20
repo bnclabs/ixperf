@@ -23,6 +23,7 @@ mod mod_rdms_llrb;
 mod mod_rdms_mvcc;
 mod mod_rdms_robt;
 mod mod_rdms_shllrb;
+mod mod_rdms_shrobt;
 mod mod_xorfilter;
 mod plot;
 mod stats;
@@ -161,6 +162,7 @@ pub struct Profile {
     pub rdms_llrb: mod_rdms_llrb::LlrbOpt,
     pub rdms_mvcc: mod_rdms_mvcc::MvccOpt,
     pub rdms_robt: mod_rdms_robt::RobtOpt,
+    pub rdms_shrobt: mod_rdms_shrobt::ShrobtOpt,
     pub rdms_shllrb: mod_rdms_shllrb::ShllrbOpt,
     pub rdms_dgm: mod_rdms_dgm::DgmOpt,
 }
@@ -182,6 +184,7 @@ impl Default for Profile {
             rdms_llrb: Default::default(),
             rdms_mvcc: Default::default(),
             rdms_robt: Default::default(),
+            rdms_shrobt: Default::default(),
             rdms_shllrb: Default::default(),
             rdms_dgm: Default::default(),
         }
@@ -205,6 +208,7 @@ impl Clone for Profile {
             rdms_llrb: self.rdms_llrb.clone(),
             rdms_mvcc: self.rdms_mvcc.clone(),
             rdms_robt: self.rdms_robt.clone(),
+            rdms_shrobt: self.rdms_shrobt.clone(),
             rdms_shllrb: self.rdms_shllrb.clone(),
             rdms_dgm: self.rdms_dgm.clone(),
         }
@@ -272,6 +276,9 @@ impl TryFrom<toml::Value> for Profile {
             .ok()
             .unwrap_or(Default::default());
         p.rdms_robt = TryFrom::try_from(value.clone())
+            .ok()
+            .unwrap_or(Default::default());
+        p.rdms_shrobt = TryFrom::try_from(value.clone())
             .ok()
             .unwrap_or(Default::default());
         p.rdms_shllrb = TryFrom::try_from(value.clone())
