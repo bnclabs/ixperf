@@ -56,7 +56,9 @@ impl TryFrom<toml::Value> for ShrobtOpt {
         };
         for (name, value) in section.as_table().unwrap().iter() {
             match name.as_str() {
-                "num_shards" => opt.num_shards = value.as_integer().unwrap().try_into().unwrap(),
+                "num_shards" => {
+                    opt.num_shards = value.as_integer().unwrap().try_into().unwrap(),
+                }
                 "dir" => {
                     let dir: &ffi::OsStr = value.as_str().unwrap().as_ref();
                     opt.dir = dir.to_os_string();
@@ -80,7 +82,11 @@ impl TryFrom<toml::Value> for ShrobtOpt {
             }
         }
 
-        Ok(opt)
+        if opt.num_shards < 1 {
+            Err(format!("invalid num_shards:{}", opt.num_shards));
+        }  else {
+            Ok(opt)
+        }
     }
 }
 
