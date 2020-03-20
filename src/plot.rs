@@ -613,7 +613,7 @@ impl StatLine {
         match self.value.as_table() {
             Some(table) => match table.get("system") {
                 Some(table) => {
-                    let load = table["cpu_load"].as_integer().unwrap();
+                    let load = table["cpu_load"].as_float().unwrap() as i64;
                     Some((self.millis, load.try_into().unwrap()))
                 }
                 None => None,

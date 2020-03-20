@@ -300,7 +300,7 @@ fn system_stats() {
             let cpu = p.cpu_usage();
             let memory = p.memory() / 1024;
 
-            let line = format!("system = {{ cpu_load={}, mem_rss={} }}", cpu, memory);
+            let line = format!("system = {{ cpu_load={:.2}, mem_rss={} }}", cpu, memory);
             stats!(opts, "ixperf", "system periodic-stats\n{}", line);
             break;
         }
