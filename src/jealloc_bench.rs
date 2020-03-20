@@ -12,10 +12,10 @@ use std::{
 };
 
 struct Node {
-    field1: [u8; 12],
-    field2: [u8; 24],
-    field3: [u8; 48],
-    field4: [u8; 20],
+    _field1: [u8; 12],
+    _field2: [u8; 24],
+    _field3: [u8; 48],
+    _field4: [u8; 20],
 }
 
 #[bench]
@@ -70,8 +70,8 @@ fn bench_je_alloc_cc2(b: &mut Bencher) {
     let handle = thread::spawn(move || {
         let lt = Layout::new::<Node>();
         for ptr in rx {
-            // let ptr = Box::leak(ptr);
-            //unsafe { je_rx.dealloc(ptr, lt) };
+            let ptr = Box::leak(ptr);
+            unsafe { je_rx.dealloc(ptr, lt) };
         }
     });
 
@@ -79,9 +79,8 @@ fn bench_je_alloc_cc2(b: &mut Bencher) {
     let n = 1_000_000;
     for _i in 0..n {
         unsafe {
-            // let lt = Layout::new::<Node>();
-            tx.send(10).unwrap();
-            //tx.send(Box::from_raw(je_tx.alloc(lt))).unwrap();
+            let lt = Layout::new::<Node>();
+            tx.send(Box::from_raw(je_tx.alloc(lt))).unwrap();
         }
     }
     mem::drop(tx);
