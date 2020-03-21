@@ -47,6 +47,6 @@ journal_limit = 1_000_000_000
 # batch size.
 batch_size = 10_000
 # don't sync to disk.
-nosync = false
+nosync = true
 # hasher to use.
 build_hasher = "random_state"

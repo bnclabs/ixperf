@@ -33,7 +33,7 @@ impl TryFrom<toml::Value> for WalOpt {
     fn try_from(value: toml::Value) -> Result<Self, Self::Error> {
         let mut opt: WalOpt = Default::default();
 
-        let section = match &value.get("rdms-wal") {
+        let section = match &value.get("wal") {
             None => return Err("not found".to_string()),
             Some(section) => section.clone(),
         };
@@ -106,8 +106,10 @@ pub(crate) fn perf(name: &str, p: Profile) -> Result<(), String> {
             do_perf::<Vec<u8>, Vec<u8>, _>(name, p, RandomState::new())
         }
         _ => Err(format!(
-            "unsupported key/value types {}/{}",
-            p.key_type, p.val_type
+            "unsupported key/value types {}/{} build_hasher:{}",
+            p.key_type,
+            p.val_type,
+            p.wal.build_hasher.as_str(),
         ))?,
     };
 
