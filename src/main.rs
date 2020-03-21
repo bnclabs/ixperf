@@ -24,6 +24,7 @@ mod mod_rdms_mvcc;
 mod mod_rdms_robt;
 mod mod_rdms_shllrb;
 mod mod_rdms_shrobt;
+mod mod_wal;
 mod mod_xorfilter;
 mod plot;
 mod stats;
@@ -132,6 +133,7 @@ fn do_main() -> Result<(), String> {
         "lmdb" => mod_lmdb::perf(p),
         "xorfilter" => mod_xorfilter::perf(p),
         "rdms" => mod_rdms::do_rdms_index(p),
+        "wal" => mod_wal::perf("ixperf", p),
         _ => Err(format!("unsupported index-type {}", p.index)),
     };
     match res {
@@ -165,6 +167,7 @@ pub struct Profile {
     pub rdms_shrobt: mod_rdms_shrobt::ShrobtOpt,
     pub rdms_shllrb: mod_rdms_shllrb::ShllrbOpt,
     pub rdms_dgm: mod_rdms_dgm::DgmOpt,
+    pub wal: mod_wal::WalOpt,
 }
 
 impl Default for Profile {
@@ -187,6 +190,7 @@ impl Default for Profile {
             rdms_shrobt: Default::default(),
             rdms_shllrb: Default::default(),
             rdms_dgm: Default::default(),
+            wal: Default::default(),
         }
     }
 }
@@ -211,6 +215,7 @@ impl Clone for Profile {
             rdms_shrobt: self.rdms_shrobt.clone(),
             rdms_shllrb: self.rdms_shllrb.clone(),
             rdms_dgm: self.rdms_dgm.clone(),
+            wal: self.wal.clone(),
         }
     }
 }
@@ -285,6 +290,9 @@ impl TryFrom<toml::Value> for Profile {
             .ok()
             .unwrap_or(Default::default());
         p.rdms_dgm = TryFrom::try_from(value.clone())
+            .ok()
+            .unwrap_or(Default::default());
+        p.wal = TryFrom::try_from(value.clone())
             .ok()
             .unwrap_or(Default::default());
         Ok(p)

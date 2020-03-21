@@ -21,8 +21,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use crate::generator::RandomKV;
-use crate::generator::{Cmd, IncrementalWrite};
+use crate::generator::{Cmd, IncrementalWrite, RandomKV};
 use crate::mod_rdms;
 use crate::stats;
 use crate::Profile;
@@ -56,13 +55,11 @@ impl TryFrom<toml::Value> for ShrobtOpt {
         };
         for (name, value) in section.as_table().unwrap().iter() {
             match name.as_str() {
-                "num_shards" => {
-                    opt.num_shards = value.as_integer().unwrap().try_into().unwrap(),
-                }
                 "dir" => {
                     let dir: &ffi::OsStr = value.as_str().unwrap().as_ref();
                     opt.dir = dir.to_os_string();
                 }
+                "num_shards" => opt.num_shards = value.as_integer().unwrap().try_into().unwrap(),
                 "z_blocksize" => opt.z_blocksize = value.as_integer().unwrap().try_into().unwrap(),
                 "m_blocksize" => opt.m_blocksize = value.as_integer().unwrap().try_into().unwrap(),
                 "v_blocksize" => opt.v_blocksize = value.as_integer().unwrap().try_into().unwrap(),
@@ -83,8 +80,8 @@ impl TryFrom<toml::Value> for ShrobtOpt {
         }
 
         if opt.num_shards < 1 {
-            Err(format!("invalid num_shards:{}", opt.num_shards));
-        }  else {
+            Err(format!("invalid num_shards:{}", opt.num_shards))
+        } else {
             Ok(opt)
         }
     }

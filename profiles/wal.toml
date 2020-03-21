@@ -1,0 +1,52 @@
+[ixperf]
+# Index-type to benchmark.
+index = "wal"
+# Key-type for the index.
+key_type = "array"
+# Value-type for the index
+value_type = "bytes"
+
+[generator]
+# Seed for randomization.
+seed = 0
+# Block size if key-type is vector-of-bytes.
+key_size = 20
+# Block size if key-type is vector-of-bytes.
+value_size = 64
+# Total number of initial load operations.
+loads = 1_000_000
+# Total number of incremental set operations.
+sets = 1_000_000
+# Total number of incremental delete operations.
+deletes = 0
+# Total number of get operations, applied after the initial load.
+gets = 10_000_000
+# Total number of range iterations between a lower bound and upper bound,
+# applied after the initial load.
+ranges = 0
+# Total number of reverse iterations between an upper bound and lower bound,
+# applied after the initial load.
+reverses = 0
+# Benchmark a full table scan.
+iters = true
+# Channel size to use between generator thread and loader thread. If
+# channel size is <= ZERO, then index-ops shall be created asynchronously.
+channel_size = 0
+
+[wal]
+# Directory path to store robt files.
+dir = "./data/wal"
+# Name of the wal
+name = "wal-ixperf"
+# Number of writer threads for concurrent write.
+writers = 1
+# number of shards
+nshards = 1
+# file size limit for a single journal file.
+journal_limit = 1_000_000_000
+# batch size.
+batch_size = 10_000
+# don't sync to disk.
+nosync = false
+# hasher to use.
+build_hasher = "random_state"
