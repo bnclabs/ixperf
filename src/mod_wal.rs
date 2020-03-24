@@ -23,7 +23,7 @@ pub struct WalOpt {
     nshards: usize,
     journal_limit: usize,
     batch_size: usize,
-    nosync: bool,
+    fsync: bool,
     build_hasher: String,
 }
 
@@ -50,7 +50,7 @@ impl TryFrom<toml::Value> for WalOpt {
                     opt.journal_limit = value.as_integer().unwrap().try_into().unwrap()
                 }
                 "batch_size" => opt.batch_size = value.as_integer().unwrap().try_into().unwrap(),
-                "nosync" => opt.nosync = value.as_bool().unwrap(),
+                "fsync" => opt.fsync = value.as_bool().unwrap(),
                 "build_hasher" => opt.build_hasher = value.as_str().unwrap().to_string(),
                 _ => panic!("invalid profile parameter {}", name),
             }
@@ -72,7 +72,7 @@ impl WalOpt {
             self.nshards,
             self.journal_limit,
             self.batch_size,
-            self.nosync,
+            self.fsync,
         )
         .unwrap();
         wal::Wal::from_dlog(dl, build_hasher)
