@@ -71,6 +71,7 @@ where
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
     <V as Diff>::D: Send,
 {
+    info!(target: "ixperf", "for type <{},{}>", p.key_type, p.val_type);
     let mvcc_index = p.rdms_mvcc.new(name);
     let mut index = rdms::Rdms::new(name, mvcc_index).unwrap();
 
