@@ -135,10 +135,13 @@ where
     <V as Diff>::D: Send + Default + Serialize,
     B: 'static + Bloom + Send + Sync,
 {
+    info!(target: "ixperf", "for type <{},{}>", p.key_type, p.val_type);
+
     let robt_index = p.rdms_robt.new(name);
     let mut index = rdms::Rdms::new(name, robt_index).unwrap();
 
     // load initial data.
+    let mut total_elapsed: Duration = Default::default();
     let mut fstats = stats::Ops::new();
     let mut rng = SmallRng::from_seed(p.g.seed.to_le_bytes());
     let mut seqno = 0;
@@ -168,18 +171,37 @@ where
                 _ => unreachable!(),
             };
         }
+
         seqno = mem_index.to_seqno().unwrap();
+        let mem_index_len = mem_index.len();
         std::mem::drop(w);
-        index
-            .commit(
-                CommitIter::new(mem_index, (Bound::Unbounded, Bound::Included(seqno))),
-                |meta| meta,
-            )
-            .unwrap();
+
+        let elapsed = {
+            let start = SystemTime::now();
+            index
+                .commit(
+                    CommitIter::new(mem_index, (Bound::Unbounded, Bound::Included(seqno))),
+                    |meta| meta,
+                )
+                .unwrap();
+            Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64)
+        };
+        info!(
+            target: "ixperf",
+            "Took {:?} to commit {} items seqno:{}", elapsed, mem_index_len, seqno
+        );
+        total_elapsed += elapsed;
     }
 
-    let cutoff = Cutoff::new_lsm(Bound::Excluded(0));
-    index.compact(cutoff).unwrap();
+    info!(target: "ixperf", "Total elapsed for commits {:?}", total_elapsed);
+
+    let elapsed = {
+        let start = SystemTime::now();
+        let cutoff = Cutoff::new_lsm(Bound::Excluded(0));
+        index.compact(cutoff).unwrap();
+        Duration::from_nanos(start.elapsed().unwrap().as_nanos() as u64)
+    };
+    info!(target: "ixperf", "Took {:?} to compact", elapsed);
 
     // validate
     let mut r = index.to_reader().unwrap();
@@ -249,5 +271,7 @@ where
         "failed because useful:{} footprint:{}",
         useful,
         footprint
-    )
+    );
+
+    info!(target: "ixperf", "robt stats\n{}", stats);
 }
