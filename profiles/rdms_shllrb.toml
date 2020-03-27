@@ -14,13 +14,13 @@ key_size = 20
 # Block size if key-type is vector-of-bytes.
 value_size = 64
 # Total number of initial load operations.
-loads = 1_000_000
+loads = 2_000_000
 # Total number of incremental set operations.
-sets = 1_000_000
+sets = 2_000_000
 # Total number of incremental delete operations.
-deletes = 0
+deletes = 100_000
 # Total number of get operations, applied after the initial load.
-gets = 10_000_000
+gets = 2_000_000
 # Total number of range iterations between a lower bound and upper bound,
 # applied after the initial load.
 ranges = 0
@@ -39,11 +39,11 @@ name = "rdms-ixperf"
 # Type of rdms to use.
 index = "shllrb"
 # Number of writer threads for initial load.
-initial = 16
+initial = 4
 # Number of writer threads for concurrent write.
-writers = 4
+writers = 1
 # Number reader threads for concurrent read.
-readers = 16
+readers = 4
 
 [rdms-shllrb]
 # Create llrb with log-structured-merge.
@@ -53,7 +53,7 @@ sticky = false
 # Spin while waiting for lock
 spin = true
 # Auto-shard interval in seconds
-interval = 30
+interval = 1
 # Maximum number of shards allowed.
 max_shards = 1024
 # Maximum number of entries beyond which shard shall be split.

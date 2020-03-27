@@ -83,6 +83,8 @@ where
     V: 'static + Clone + Default + Send + Sync + Diff + Footprint + RandomKV,
     <V as Diff>::D: Send,
 {
+    info!(target: "ixperf", "for type <{},{}>", p.key_type, p.val_type);
+
     let index = p.rdms_shllrb.new(name);
     let mut index = rdms::Rdms::new(name, index).unwrap();
 
