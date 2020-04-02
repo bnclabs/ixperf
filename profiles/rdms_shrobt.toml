@@ -15,7 +15,7 @@ key_size = 20
 # Block size if key-type is vector-of-bytes.
 value_size = 64
 # Total number of initial load operations.
-loads = 1_000_000
+loads = 10_000_000
 # Total number of incremental set operations.
 sets = 1_000_000
 # Total number of incremental delete operations.
@@ -38,19 +38,19 @@ channel_size = 0
 # Name of the rdms index.
 name = "rdms-ixperf"
 # Type of rdms to use.
-index = "shllrb"
+index = "shrobt"
 # Number of writer threads for initial load.
-initial = 16
+initial = 4
 # Number of writer threads for concurrent write.
-writers = 4
+writers = 1
 # Number reader threads for concurrent read.
-readers = 16
+readers = 4
 
 [rdms-shrobt]
 # Type of bitmap index to use a bloom filter for get ops.
-num_shards = "1"
+num_shards = 2
 # Directory path to store robt files.
-dir = "./data"
+dir = "./data/rdms-shrobt"
 # Block size for leaf nodes, must be a multiple of underlying
 # storage's block size.
 z_blocksize = 4096

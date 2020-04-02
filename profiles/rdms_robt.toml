@@ -47,7 +47,7 @@ readers = 4
 
 [rdms-robt]
 # Directory path to store robt files.
-dir = "./data"
+dir = "./data/rdms-robt"
 # Block size for leaf nodes, must be a multiple of underlying
 # storage's block size.
 z_blocksize = 4096
