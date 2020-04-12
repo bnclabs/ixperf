@@ -13,12 +13,12 @@ structopt = { version = "0.2", default-features = false }
 toml = "0.5.3"
 rand = "0.6.4"
 log = { version = "0.4.8", features = ["max_level_debug", "release_max_level_debug"] }
-xorfilter-rs = {path="../xorfilter"}
+xorfilter-rs = { git = "https://github.com/bnclabs/xorfilter.git" }
 
 env_logger = "0.7.1"
 im="12.3.0"
-llrb-index = {path = "../llrb-index/"}
-rdms = {path = "../rdms/"}
+llrb-index = { git = "https://github.com/bnclabs/llrb-index.git" }
+rdms = { git = "https://github.com/bnclabs/rdms.git" }
 lmdb = "0.8.0"
 cpuprofiler = "0.0.2"
 jemallocator = "0.3.0"
