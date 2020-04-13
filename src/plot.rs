@@ -369,7 +369,7 @@ fn do_render(
             ))
             .expect("draw series")
             .label(names[i].to_string())
-            .legend(move |(x, y)| Path::new(vec![(x, y), (x + 20, y)], &clr2));
+            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &clr2));
     }
     chart
         .configure_series_labels()
@@ -691,7 +691,10 @@ fn normalize_to_secs(mut items: Vec<(i64, u64)>) -> Vec<u64> {
         };
         items.pop(); // NOTE: skip the last second.
 
-        let mut acc = vec![items.remove(0).1];
+        let mut acc = match items.len() {
+            0 => vec![],
+            _ => vec![items.remove(0).1],
+        };
         let (mut rem_t, mut rem_v) = (0, 0);
         for (mut t, mut v) in items.into_iter() {
             assert!(t >= 1000, "{}", t);

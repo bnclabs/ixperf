@@ -1,0 +1,110 @@
+[2020-04-12T12:25:11.054Z DEBUG main  ] starting with seed = 75161833821746252893681575028625206997
+[2020-04-12T12:25:11.054Z INFO ixperf] for type <array,bytes>
+[2020-04-12T12:25:11.054Z DEBUG mvcc  ] rdms-ixperf, new writer 0
+[2020-04-12T12:25:11.689Z DEBUG genrtr] initial_load: generated 1000000 items in 586.010938ms
+[2020-04-12T12:25:12.097Z DEBUG ixperf] system periodic-stats
+system = { cpu_load=0.41, mem_rss=663 }
+[2020-04-12T12:25:12.152Z DEBUG ixperf] initial-0 periodic-stats
+load = { ops=372160, updates=61672, latency={ n=46520, elapsed=125000019, min=663, mean=2687, max=23976, latencies={ "91"=3800, "92"=3900, "93"=4100, "94"=4300, "95"=4600, "96"=4900, "97"=5300, "98"=6000, "99"=7000, "100"=23900 } } }
+[2020-04-12T12:25:13.098Z DEBUG ixperf] system periodic-stats
+system = { cpu_load=0.27, mem_rss=720 }
+[2020-04-12T12:25:13.215Z DEBUG ixperf] initial-0 periodic-stats
+load = { ops=314256, updates=128430, latency={ n=39282, elapsed=125000940, min=1334, mean=3182, max=22118, latencies={ "91"=4100, "92"=4200, "93"=4400, "94"=4600, "95"=4800, "96"=5100, "97"=5600, "98"=6400, "99"=7800, "100"=22100 } } }
+[2020-04-12T12:25:14.100Z DEBUG ixperf] system periodic-stats
+system = { cpu_load=0.26, mem_rss=736 }
+[2020-04-12T12:25:14.264Z DEBUG ixperf] initial-0 periodic-stats
+load = { ops=296552, updates=167377, latency={ n=37069, elapsed=125000503, min=1523, mean=3372, max=29030, latencies={ "91"=4100, "92"=4200, "93"=4400, "94"=4600, "95"=4800, "96"=5200, "97"=5700, "98"=6600, "99"=8400, "100"=29000 } } }
+[2020-04-12T12:25:14.373Z DEBUG ixperf] initial-0 stats
+load = { ops=1000000, updates=368233 }
+load.latency = { n=125000, min=663ns, mean=3.062µs, max=29.03µs }
+load.latency.percentiles = { "91"=4µs, "92"=4.1µs, "93"=4.3µs, "94"=4.5µs, "95"=4.7µs, "96"=5.1µs, "97"=5.5µs, "98"=6.3µs, "99"=7.6µs, "100"=29µs }
+[2020-04-12T12:25:14.374Z INFO ixperf] initial-0 load_ops:1000000 elapsed:3.294486328s
+[2020-04-12T12:25:14.374Z DEBUG mvcc  ] rdms-ixperf, dropping writer 0
+[2020-04-12T12:25:14.382Z DEBUG ixperf] initial stats
+load = { ops=1000000, updates=368233 }
+load.latency = { n=125000, min=663ns, mean=3.062µs, max=29.03µs }
+load.latency.percentiles = { "91"=4µs, "92"=4.1µs, "93"=4.3µs, "94"=4.5µs, "95"=4.7µs, "96"=5.1µs, "97"=5.5µs, "98"=6.3µs, "99"=7.6µs, "100"=29µs }
+
+[2020-04-12T12:25:14.383Z DEBUG mvcc  ] rdms-ixperf, new reader 0
+[2020-04-12T12:25:14.710Z DEBUG mvcc  ] rdms-ixperf, dropping reader 0
+[2020-04-12T12:25:14.710Z DEBUG mvcc  ] rdms-ixperf, new writer 0
+[2020-04-12T12:25:14.711Z DEBUG mvcc  ] rdms-ixperf, new reader 0
+[2020-04-12T12:25:14.711Z DEBUG mvcc  ] rdms-ixperf, new reader 1
+[2020-04-12T12:25:15.103Z DEBUG ixperf] system periodic-stats
+system = { cpu_load=0.73, mem_rss=1386 }
+[2020-04-12T12:25:15.125Z DEBUG genrtr] incremental_read: generated 1000000 ops in 363.809547ms
+[2020-04-12T12:25:15.128Z DEBUG genrtr] incremental_read: generated 1000000 ops in 367.094891ms
+[2020-04-12T12:25:15.356Z DEBUG genrtr] incremental_write: generated 1100000 ops in 631.810685ms
+[2020-04-12T12:25:15.762Z DEBUG ixperf] writer-0 periodic-stats
+set = { ops=147336, updates=146286, latency={ n=18417, elapsed=90738151, min=1257, mean=4926, max=56272, latencies={ "91"=6400, "92"=6700, "93"=6900, "94"=7200, "95"=7600, "96"=8300, "97"=9400, "98"=11000, "99"=12800, "100"=56200 } } }
+delete = { ops=14701, missing=95, latency={ n=1837, elapsed=34262397, min=9717, mean=18651, max=65534, latencies={ "91"=25400, "92"=26100, "93"=27000, "94"=28400, "95"=30000, "96"=32600, "97"=35300, "98"=38900, "99"=45000, "100"=65500 } } }
+[2020-04-12T12:25:15.805Z DEBUG ixperf] reader-1 periodic-stats
+get = { ops=811472, missing=305067, latency={ n=101434, elapsed=125000144, min=356, mean=1232, max=13426, latencies={ "94"=1600, "96"=1700, "98"=1800, "99"=2000, "100"=13400 } } }
+[2020-04-12T12:25:15.807Z DEBUG ixperf] reader-0 periodic-stats
+get = { ops=765848, missing=104394, latency={ n=95731, elapsed=125000938, min=366, mean=1305, max=13323, latencies={ "91"=1600, "94"=1700, "97"=1800, "98"=1900, "99"=2000, "100"=13300 } } }
+[2020-04-12T12:25:16.098Z DEBUG ixperf] reader-1 stats
+get = { ops=1000000, missing=377315 }
+get.latency = { n=125000, min=356ns, mean=1.228µs, max=13.541µs }
+get.latency.percentiles = { "94"=1.6µs, "96"=1.7µs, "98"=1.8µs, "99"=2µs, "100"=13.5µs }
+[2020-04-12T12:25:16.099Z INFO ixperf] reader-1 r_ops:1000000 elapsed:1.362090077s
+[2020-04-12T12:25:16.099Z DEBUG mvcc  ] rdms-ixperf, dropping reader 1
+[2020-04-12T12:25:16.105Z DEBUG ixperf] system periodic-stats
+system = { cpu_load=0.85, mem_rss=1706 }
+[2020-04-12T12:25:16.159Z DEBUG ixperf] reader-0 stats
+get = { ops=1000000, missing=194527 }
+get.latency = { n=125000, min=295ns, mean=1.283µs, max=14.263µs }
+get.latency.percentiles = { "92"=1.6µs, "95"=1.7µs, "97"=1.8µs, "98"=1.9µs, "99"=2µs, "100"=14.2µs }
+[2020-04-12T12:25:16.160Z INFO ixperf] reader-0 r_ops:1000000 elapsed:1.42261907s
+[2020-04-12T12:25:16.160Z DEBUG mvcc  ] rdms-ixperf, dropping reader 0
+[2020-04-12T12:25:16.819Z DEBUG ixperf] writer-0 periodic-stats
+set = { ops=169720, updates=166257, latency={ n=21215, elapsed=88518941, min=1335, mean=4172, max=121250, latencies={ "91"=5700, "92"=6000, "93"=6300, "94"=6600, "95"=7000, "96"=7600, "97"=8500, "98"=9900, "99"=11600, "100"=121200 } } }
+delete = { ops=16901, missing=353, latency={ n=2112, elapsed=36482409, min=10077, mean=17273, max=64608, latencies={ "91"=23600, "92"=24700, "93"=25600, "94"=26900, "95"=28100, "96"=30100, "97"=32800, "98"=37200, "99"=42600, "100"=64600 } } }
+[2020-04-12T12:25:17.107Z DEBUG ixperf] system periodic-stats
+system = { cpu_load=0.27, mem_rss=1699 }
+[2020-04-12T12:25:17.876Z DEBUG ixperf] writer-0 periodic-stats
+set = { ops=177072, updates=156998, latency={ n=22134, elapsed=87020376, min=1460, mean=3931, max=70109, latencies={ "91"=5700, "92"=5900, "93"=6200, "94"=6400, "95"=6900, "96"=7600, "97"=8500, "98"=9700, "99"=11300, "100"=70100 } } }
+delete = { ops=17801, missing=2030, latency={ n=2225, elapsed=37981525, min=9370, mean=17070, max=58185, latencies={ "91"=24300, "92"=25200, "93"=26500, "94"=27900, "95"=29500, "96"=31700, "97"=34000, "98"=37200, "99"=42100, "100"=58100 } } }
+[2020-04-12T12:25:18.109Z DEBUG ixperf] system periodic-stats
+system = { cpu_load=0.26, mem_rss=1738 }
+[2020-04-12T12:25:18.936Z DEBUG ixperf] writer-0 periodic-stats
+set = { ops=174794, updates=111267, latency={ n=21849, elapsed=87478323, min=1512, mean=4003, max=104817, latencies={ "91"=5900, "92"=6000, "93"=6300, "94"=6500, "95"=6900, "96"=7500, "97"=8300, "98"=9500, "99"=12100, "100"=104800 } } }
+delete = { ops=17584, missing=6364, latency={ n=2198, elapsed=37530548, min=7676, mean=17074, max=55656, latencies={ "91"=25200, "92"=25800, "93"=26500, "94"=27300, "95"=28200, "96"=29600, "97"=31200, "98"=32900, "99"=36700, "100"=55600 } } }
+[2020-04-12T12:25:19.111Z DEBUG ixperf] system periodic-stats
+system = { cpu_load=0.26, mem_rss=1760 }
+[2020-04-12T12:25:19.996Z DEBUG ixperf] writer-0 periodic-stats
+set = { ops=171000, updates=116738, latency={ n=21375, elapsed=87380421, min=1284, mean=4087, max=191474, latencies={ "91"=6000, "92"=6200, "93"=6400, "94"=6700, "95"=7200, "96"=7900, "97"=8700, "98"=9800, "99"=12900, "100"=191400 } } }
+delete = { ops=17032, missing=5327, latency={ n=2129, elapsed=37622104, min=10230, mean=17671, max=57322, latencies={ "91"=25500, "92"=26300, "93"=27000, "94"=27800, "95"=29200, "96"=30300, "97"=32000, "98"=34200, "99"=37500, "100"=57300 } } }
+[2020-04-12T12:25:20.113Z DEBUG ixperf] system periodic-stats
+system = { cpu_load=0.26, mem_rss=1751 }
+[2020-04-12T12:25:21.047Z DEBUG ixperf] writer-0 stats
+set = { ops=1000000, updates=812875 }
+set.latency = { n=124999, min=1.021µs, mean=4.203µs, max=249.719µs }
+set.latency.percentiles = { "91"=5.9µs, "92"=6.1µs, "93"=6.4µs, "94"=6.7µs, "95"=7.2µs, "96"=7.9µs, "97"=8.8µs, "98"=10.1µs, "99"=12.3µs, "100"=249.7µs }
+delete = { ops=100000, missing=18638 }
+delete.latency = { n=12498, min=7.676µs, mean=17.716µs, max=65.534µs }
+delete.latency.percentiles = { "91"=25.5µs, "92"=26.4µs, "93"=27.2µs, "94"=28.4µs, "95"=29.8µs, "96"=31.6µs, "97"=33.8µs, "98"=36.5µs, "99"=40.7µs, "100"=65.5µs }
+[2020-04-12T12:25:21.049Z INFO ixperf] writer-0 w_ops:1100000 elapsed:6.329808491s
+[2020-04-12T12:25:21.049Z DEBUG mvcc  ] rdms-ixperf, dropping writer 0
+[2020-04-12T12:25:21.057Z DEBUG ixperf] all-writers stats
+set = { ops=1000000, updates=812875 }
+set.latency = { n=124999, min=1.021µs, mean=4.203µs, max=249.719µs }
+set.latency.percentiles = { "91"=5.9µs, "92"=6.1µs, "93"=6.4µs, "94"=6.7µs, "95"=7.2µs, "96"=7.9µs, "97"=8.8µs, "98"=10.1µs, "99"=12.3µs, "100"=249.7µs }
+delete = { ops=100000, missing=18638 }
+delete.latency = { n=12498, min=7.676µs, mean=17.716µs, max=65.534µs }
+delete.latency.percentiles = { "91"=25.5µs, "92"=26.4µs, "93"=27.2µs, "94"=28.4µs, "95"=29.8µs, "96"=31.6µs, "97"=33.8µs, "98"=36.5µs, "99"=40.7µs, "100"=65.5µs }
+[2020-04-12T12:25:21.085Z DEBUG ixperf] all-readers stats
+get = { ops=2000000, missing=571842 }
+get.latency = { n=250000, min=295ns, mean=1.256µs, max=14.263µs }
+get.latency.percentiles = { "93"=1.6µs, "96"=1.7µs, "97"=1.8µs, "98"=1.9µs, "99"=2µs, "100"=14.2µs }
+[2020-04-12T12:25:21.093Z INFO ixperf] took 327.325235ms to iter over 631767 items
+[2020-04-12T12:25:21.114Z DEBUG ixperf] system periodic-stats
+system = { cpu_load=0.26, mem_rss=1757 }
+[2020-04-12T12:25:21.155Z INFO ixperf] rdms mvcc stats
+mvcc.name = rdms-ixperf
+mvcc = { entries=737530, n_deleted=0 node_size=96, blacks=16 }
+mvcc = { n_reclaimed=46995873, key_footprint=14750600, tree_footprint=383515600 }
+mvcc.rw_latch = { value = 0, read_locks = 0, write_locks = 2100000, conflicts = 0 }
+mvcc.snap_latch = { value = 0, read_locks = 2000003, write_locks = 2100000, conflicts = 367158 }
+mvcc.depths = { samples=737531, min=16, mean=20, max=27, percentiles={ "93" = 22, "98" = 23, "99" = 24, "100" = 27 } }
+
+[2020-04-12T12:25:21.447Z DEBUG mvcc  ] rdms-ixperf, dropped ...
