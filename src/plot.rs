@@ -494,6 +494,18 @@ fn parse_log(opt: &Opt) -> Result<PlotData, String> {
         stats.push(stat_mode);
     }
 
+    for stat in stats.iter_mut() {
+        let ns: Vec<usize> = stat.iter().map(|r| r.len()).collect();
+        match ns.into_iter().min() {
+            Some(n) => {
+                for s in stat.iter_mut() {
+                    s.truncate(n)
+                }
+            }
+            None => (),
+        };
+    }
+
     Ok(PlotData {
         title_system: stats.remove(0),
         title_initial: stats.remove(0),
