@@ -516,7 +516,7 @@ fn parse_log(opt: &Opt) -> Result<PlotData, String> {
 }
 
 fn parse_periodic_stats(msg: String) -> Option<StatLine> {
-    let re1 = Regex::new(r"\[([^ ]+) .*\] (.+) periodic-stats.*").unwrap();
+    let re1 = Regex::new(r"\[(.+)\] \[.+\] \(.+\) (.+) periodic-stats.*").unwrap();
     if !re1.is_match(&msg) {
         return None;
     }

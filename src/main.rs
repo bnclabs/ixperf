@@ -306,12 +306,12 @@ fn init_logger(opts: &Opt) -> Result<(), String> {
 
     let mut config = simplelog::ConfigBuilder::new();
     config
-        .set_location_level(simplelog::LevelFilter::Error)
+        .set_location_level(simplelog::LevelFilter::Off)
         .set_target_level(simplelog::LevelFilter::Off)
         .set_thread_mode(simplelog::ThreadLogMode::Both)
         .set_thread_level(simplelog::LevelFilter::Error)
         .set_time_to_local(true)
-        .set_time_format("%Y-%m-%dT%H-%M-%S%.3f".to_string());
+        .set_time_format("[%Y-%m-%dT%H:%M:%S%.3fZ]".to_string());
 
     if opts.log_file.len() > 0 {
         let p = path::Path::new(&opts.log_file);
