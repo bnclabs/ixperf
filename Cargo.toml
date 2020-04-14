@@ -12,10 +12,9 @@ edition = "2018"
 structopt = { version = "0.2", default-features = false }
 toml = "0.5.3"
 rand = "0.6.4"
-log = { version = "0.4.8", features = ["max_level_debug", "release_max_level_debug"] }
 xorfilter-rs = { git = "https://github.com/bnclabs/xorfilter.git" }
-
-env_logger = "0.7.1"
+log = { version = "0.4.8", features = ["max_level_trace", "release_max_level_debug"] }
+simplelog = "0.7.5"
 im="12.3.0"
 llrb-index = { git = "https://github.com/bnclabs/llrb-index.git" }
 rdms = { git = "https://github.com/bnclabs/rdms.git" }

@@ -3,14 +3,14 @@
 #[cfg(feature = "cpuprofile")]
 use cpuprofiler::PROFILER;
 
-use env_logger;
+use simplelog;
 use jemallocator;
 use log::{self, debug, error};
 use rand::random;
 use structopt::StructOpt;
 use toml;
 
-use std::{convert::TryFrom, fs, io::Write, thread, time};
+use std::{convert::TryFrom, io, path, fs, thread, time};
 
 mod generator;
 mod latency;
@@ -51,47 +51,17 @@ pub struct Opt {
     #[structopt(long = "percentile", default_value = "99")]
     percentile: String,
 
+    #[structopt(long = "log-file", default_value="")]
+    log_file: String,
+
     #[structopt(short = "v", long = "verbose")]
     verbose: bool,
 
+    #[structopt(long = "trace")]
+    trace: bool,
+
     #[structopt(long = "stats")]
     stats: bool,
-}
-
-fn init_logging(opts: &Opt) {
-    let mut builder = env_logger::Builder::from_default_env();
-    let b = builder
-        .target(env_logger::Target::Stdout)
-        .format(|buf, record| {
-            let mut level_style = buf.default_level_style(record.level());
-            let color = match record.level() {
-                log::Level::Error => env_logger::fmt::Color::Red,
-                log::Level::Warn => env_logger::fmt::Color::Yellow,
-                log::Level::Info => env_logger::fmt::Color::White,
-                log::Level::Debug => env_logger::fmt::Color::Cyan,
-                log::Level::Trace => env_logger::fmt::Color::Green,
-            };
-            level_style.set_color(color);
-            if record.level() == log::Level::Info {
-                level_style.set_bold(true);
-            }
-            writeln!(
-                buf,
-                "[{} {} {}] {}",
-                level_style.value(buf.timestamp_millis()),
-                level_style.value(record.level()),
-                level_style.value(record.target()),
-                record.args()
-            )
-        });
-
-    let b = if opts.verbose {
-        b.filter(None, log::LevelFilter::Debug)
-    } else {
-        b.filter(None, log::LevelFilter::Info)
-    };
-
-    b.init();
 }
 
 fn main() {
@@ -103,7 +73,7 @@ fn main() {
 
 fn do_main() -> Result<(), String> {
     let opts = Opt::from_args();
-    init_logging(&opts);
+    init_logger(&opts)?;
 
     if opts.plot.0.len() > 0 {
         let opts = Opt::from_args();
@@ -315,11 +285,57 @@ fn system_stats() {
             let cpu = p.cpu_usage();
             let memory = p.memory() / 1024;
 
-            let line = format!("system = {{ cpu_load={:.2}, mem_rss={} }}", cpu, memory);
+            let line = format!(
+                //
+                "system = {{ cpu_load={:.2}, mem_rss={} }}", cpu, memory
+            );
             stats!(opts, "ixperf", "system periodic-stats\n{}", line);
             break;
         }
     }
+}
+
+fn init_logger(opts: &Opt) -> Result<(), String> {
+    let level_filter = if opts.trace {
+        simplelog::LevelFilter::Trace
+    } else if opts.verbose {
+        simplelog::LevelFilter::Debug
+    } else {
+        simplelog::LevelFilter::Info
+    };
+
+    let mut config = simplelog::ConfigBuilder::new();
+    config
+        .set_location_level(simplelog::LevelFilter::Error)
+        .set_target_level(simplelog::LevelFilter::Off)
+        .set_thread_mode(simplelog::ThreadLogMode::Both)
+        .set_thread_level(simplelog::LevelFilter::Error)
+        .set_time_to_local(true)
+        .set_time_format("%Y-%m-%dT%H-%M-%S%.3f".to_string());
+
+    if opts.log_file.len() > 0 {
+        let p = path::Path::new(&opts.log_file);
+        let log_file = if p.is_relative() {
+            let mut cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+            cwd.push(&p);
+            cwd.into_os_string()
+        } else {
+            p.as_os_str().to_os_string()
+        };
+        let fs = fs::File::create(&log_file).map_err(|e| e.to_string())?;
+        simplelog::WriteLogger::init(
+            level_filter,
+            config.build(),
+            fs
+        )
+    } else {
+        simplelog::WriteLogger::init(
+            level_filter,
+            config.build(),
+            io::stdout()
+        )
+    }
+    .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
