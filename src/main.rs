@@ -170,7 +170,7 @@ impl Clone for Profile {
         Profile {
             index: self.index.clone(),
             key_type: self.key_type.clone(),
-            val_type: self.key_type.clone(),
+            val_type: self.val_type.clone(),
             cmd_opts: Opt::from_args(),
 
             key_footprint: self.key_footprint,
