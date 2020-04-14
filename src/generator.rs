@@ -383,9 +383,6 @@ where
                 None
             }
             None => {
-                let a = self.n_gets + self.n_ranges + self.n_reverses;
-                let b = a + self.n_sets;
-
                 let start = time::SystemTime::now();
                 let n = cmp::min(self.to_n_total(), self.g.channel_size);
                 for _ in 0..n {
@@ -396,10 +393,10 @@ where
                     } else if r < (self.n_gets + self.n_ranges) {
                         self.n_ranges -= 1;
                         Cmd::gen_range(&mut self.rng, &self.g)
-                    } else if r < a {
+                    } else if r < (self.n_gets + self.n_ranges + self.n_reverses) {
                         self.n_reverses -= 1;
                         Cmd::gen_reverse(&mut self.rng, &self.g)
-                    } else if r < b {
+                    } else if r < (self.n_gets + self.n_ranges + self.n_reverses +self.n_sets) {
                         self.n_sets -= 1;
                         Cmd::gen_set(&mut self.rng, &self.g)
                     } else if r < self.to_n_total() {
