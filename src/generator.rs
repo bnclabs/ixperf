@@ -4,38 +4,13 @@ use toml;
 
 use std::{
     convert::TryFrom,
+    cmp,
     mem,
     ops::Bound,
-    sync::mpsc,
-    thread::{self, JoinHandle},
-    time::SystemTime,
+    time,
 };
 
 use crate::utils;
-
-enum Tx<K, V>
-where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
-{
-    N(mpsc::Sender<Cmd<K, V>>),
-    S(mpsc::SyncSender<Cmd<K, V>>),
-}
-
-impl<K, V> Tx<K, V>
-where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
-{
-    fn post(&self, msg: Cmd<K, V>) -> Result<(), String> {
-        match self {
-            Tx::N(tx) => tx.send(msg).map_err(|e| format!("{:?}", e))?,
-            Tx::S(tx) => tx.send(msg).map_err(|e| format!("{:?}", e))?,
-        }
-
-        Ok(())
-    }
-}
 
 #[derive(Default, Clone)]
 pub struct GenOptions {
@@ -99,294 +74,347 @@ impl TryFrom<toml::Value> for GenOptions {
 
 pub struct InitialLoad<K, V>
 where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
+    K: Clone + Default + RandomKV,
+    V: Clone + Default + RandomKV,
 {
-    _thread: JoinHandle<()>,
-    rx: mpsc::Receiver<Cmd<K, V>>,
+    g: GenOptions,
+    n_load: usize,
+    rng: SmallRng,
+    items: Vec<Cmd<K,V>>,
+    elapsed: time::Duration,
 }
 
 impl<K, V> InitialLoad<K, V>
 where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
+    K: Clone + Default + RandomKV,
+    V: Clone + Default + RandomKV,
 {
     pub fn new(g: GenOptions) -> InitialLoad<K, V> {
-        let (tx, rx) = if g.channel_size > 0 {
-            let (tx, rx) = mpsc::sync_channel(g.channel_size);
-            (Tx::S(tx), rx)
-        } else {
-            let (tx, rx) = mpsc::channel();
-            (Tx::N(tx), rx)
-        };
+        let rng = SmallRng::from_seed(g.seed.to_le_bytes());
+        InitialLoad {
+            g: g.clone(),
+            n_load: g.loads,
+            rng,
+            items: Default::default(),
+            elapsed: Default::default(),
+        }
+    }
 
-        let _thread = { thread::spawn(move || initial_load(g, tx)) };
-        InitialLoad { _thread, rx }
+    pub fn log(&self) {
+        debug!(
+            target: "genrtr",
+            "initial_load: generated {} items in {:?}",
+            self.g.loads - self.n_load, self.elapsed
+        );
     }
 }
 
 impl<K, V> Iterator for InitialLoad<K, V>
 where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
+    K: Clone + Default + RandomKV,
+    V: Clone + Default + RandomKV,
 {
     type Item = Cmd<K, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.rx.recv().ok()
+        match self.items.pop() {
+            Some(item) => Some(item),
+            None if self.n_load == 0 => {
+                self.log();
+                None
+            }
+            None => {
+                let start = time::SystemTime::now();
+                let n = cmp::min(self.n_load, self.g.channel_size);
+                for _ in 0..n {
+                    self.items.push(Cmd::gen_load(&mut self.rng, &self.g));
+                }
+                self.elapsed += start.elapsed().unwrap();
+                self.n_load -= n;
+                self.items.pop()
+            }
+        }
     }
-}
 
-fn initial_load<K, V>(g: GenOptions, tx: Tx<K, V>)
-where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
-{
-    let start = SystemTime::now();
-    let mut rng = SmallRng::from_seed(g.seed.to_le_bytes());
-
-    for _i in 0..g.loads {
-        tx.post(Cmd::gen_load(&mut rng, &g)).unwrap();
-    }
-
-    let elapsed = start.elapsed().unwrap();
-    debug!(
-        target: "genrtr",
-        "initial_load: generated {} items in {:?}", g.loads, elapsed
-    );
 }
 
 pub struct IncrementalRead<K, V>
 where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
+    K: Clone + Default + RandomKV,
+    V: Clone + Default + RandomKV,
 {
-    _thread: JoinHandle<()>,
-    rx: mpsc::Receiver<Cmd<K, V>>,
+    g: GenOptions,
+    n_gets: usize,
+    n_ranges: usize,
+    n_reverses: usize,
+    rng: SmallRng,
+    items: Vec<Cmd<K,V>>,
+    elapsed: time::Duration,
 }
 
 impl<K, V> IncrementalRead<K, V>
 where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
+    K: Clone + Default + RandomKV,
+    V: Clone + Default + RandomKV,
 {
     pub fn new(g: GenOptions) -> IncrementalRead<K, V> {
-        let (tx, rx) = if g.channel_size > 0 {
-            let (tx, rx) = mpsc::sync_channel(g.channel_size);
-            (Tx::S(tx), rx)
-        } else {
-            let (tx, rx) = mpsc::channel();
-            (Tx::N(tx), rx)
-        };
+        let rng = SmallRng::from_seed(g.seed.to_le_bytes());
+        IncrementalRead {
+            g: g.clone(),
+            n_gets: g.gets,
+            n_ranges: g.ranges,
+            n_reverses: g.reverses,
+            rng,
+            items: Default::default(),
+            elapsed: Default::default(),
+        }
+    }
 
-        let _thread = { thread::spawn(move || incremental_read(g, tx)) };
-        IncrementalRead { _thread, rx }
+    pub fn log(&self) {
+        debug!(
+            target: "genrtr",
+            "incr_read: generated {} items in {:?}",
+            self.to_total() - self.to_n_total(), self.elapsed
+        );
+    }
+
+    fn to_n_total(&self) -> usize {
+        self.n_gets + self.n_ranges + self.n_reverses
+    }
+
+    fn to_total(&self) -> usize {
+        self.g.gets + self.g.ranges + self.g.reverses
     }
 }
 
 impl<K, V> Iterator for IncrementalRead<K, V>
 where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
+    K: Clone + Default + RandomKV,
+    V: Clone + Default + RandomKV,
 {
     type Item = Cmd<K, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.rx.recv().ok()
+        match self.items.pop() {
+            Some(item) => Some(item),
+            None if self.to_n_total() == 0 => {
+                self.log();
+                None
+            }
+            None => {
+                let start = time::SystemTime::now();
+                let n = cmp::min(self.to_n_total(), self.g.channel_size);
+                for _ in 0..n {
+                    let r: usize = self.rng.gen::<usize>() % self.to_n_total();
+                    let cmd = if r < self.n_gets {
+                        self.n_gets -= 1;
+                        Cmd::gen_get(&mut self.rng, &self.g)
+                    } else if r < (self.n_gets + self.n_ranges) {
+                        self.n_ranges -= 1;
+                        Cmd::gen_range(&mut self.rng, &self.g)
+                    } else if r < self.to_n_total() {
+                        self.n_reverses -= 1;
+                        Cmd::gen_reverse(&mut self.rng, &self.g)
+                    } else {
+                        unreachable!();
+                    };
+                    self.items.push(cmd);
+                }
+                self.elapsed += start.elapsed().unwrap();
+                self.items.pop()
+            }
+        }
     }
-}
-
-fn incremental_read<K, V>(g: GenOptions, tx: Tx<K, V>)
-where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
-{
-    let start = SystemTime::now();
-    let mut rng = SmallRng::from_seed(g.seed.to_le_bytes());
-
-    let (mut gets, mut ranges, mut reverses) = (g.gets, g.ranges, g.reverses);
-    let mut total = gets + ranges + reverses;
-    while total > 0 {
-        let r: usize = rng.gen::<usize>() % total;
-        let cmd = if r < gets {
-            gets -= 1;
-            Cmd::gen_get(&mut rng, &g)
-        } else if r < (gets + ranges) {
-            ranges -= 1;
-            Cmd::gen_range(&mut rng, &g)
-        } else if r < (gets + ranges + reverses) {
-            reverses -= 1;
-            Cmd::gen_reverse(&mut rng, &g)
-        } else {
-            unreachable!();
-        };
-        tx.post(cmd).unwrap();
-        total = gets + ranges + reverses;
-    }
-
-    let total = g.gets + g.ranges + g.reverses;
-    let elapsed = start.elapsed().unwrap();
-    debug!(
-        target: "genrtr",
-        "incremental_read: generated {} ops in {:?}", total, elapsed
-    );
 }
 
 pub struct IncrementalWrite<K, V>
 where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
+    K: Clone + Default + RandomKV,
+    V: Clone + Default + RandomKV,
 {
-    _thread: JoinHandle<()>,
-    rx: mpsc::Receiver<Cmd<K, V>>,
+    g: GenOptions,
+    n_sets: usize,
+    n_deletes: usize,
+    rng: SmallRng,
+    items: Vec<Cmd<K,V>>,
+    elapsed: time::Duration,
 }
 
 impl<K, V> IncrementalWrite<K, V>
 where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
+    K: Clone + Default + RandomKV,
+    V: Clone + Default + RandomKV,
 {
     pub fn new(g: GenOptions) -> IncrementalWrite<K, V> {
-        let (tx, rx) = if g.channel_size > 0 {
-            let (tx, rx) = mpsc::sync_channel(g.channel_size);
-            (Tx::S(tx), rx)
-        } else {
-            let (tx, rx) = mpsc::channel();
-            (Tx::N(tx), rx)
-        };
+        let rng = SmallRng::from_seed(g.seed.to_le_bytes());
+        IncrementalWrite { 
+            g: g.clone(),
+            n_sets: g.sets,
+            n_deletes: g.deletes,
+            rng,
+            items: Default::default(),
+            elapsed: Default::default(),
+        }
+    }
 
-        let _thread = { thread::spawn(move || incremental_write(g, tx)) };
-        IncrementalWrite { _thread, rx }
+    pub fn log(&self) {
+        debug!(
+            target: "genrtr",
+            "incr_write: generated {} items in {:?}",
+            self.to_total() - self.to_n_total(), self.elapsed
+        );
+    }
+
+    fn to_n_total(&self) -> usize {
+        self.n_sets + self.n_deletes
+    }
+
+    fn to_total(&self) -> usize {
+        self.g.sets + self.g.deletes
     }
 }
 
 impl<K, V> Iterator for IncrementalWrite<K, V>
 where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
+    K: Clone + Default + RandomKV,
+    V: Clone + Default + RandomKV,
 {
     type Item = Cmd<K, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.rx.recv().ok()
+        match self.items.pop() {
+            Some(item) => Some(item),
+            None if self.to_n_total() == 0 => {
+                self.log();
+                None
+            }
+            None => {
+                let start = time::SystemTime::now();
+                let n = cmp::min(self.to_n_total(), self.g.channel_size);
+                for _ in 0..n {
+                    let r: usize = self.rng.gen::<usize>() % self.to_n_total();
+                    let cmd = if r < self.n_sets {
+                        self.n_sets -= 1;
+                        Cmd::gen_set(&mut self.rng, &self.g)
+                    } else if r < self.to_n_total() {
+                        self.n_deletes -= 1;
+                        Cmd::gen_del(&mut self.rng, &self.g)
+                    } else {
+                        unreachable!();
+                    };
+                    self.items.push(cmd);
+                }
+                self.elapsed += start.elapsed().unwrap();
+                self.items.pop()
+            }
+        }
     }
-}
-
-fn incremental_write<K, V>(g: GenOptions, tx: Tx<K, V>)
-where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
-{
-    let start = SystemTime::now();
-    let mut rng = SmallRng::from_seed(g.seed.to_le_bytes());
-
-    let (mut sets, mut dels) = (g.sets, g.deletes);
-    let mut total = sets + dels;
-    while total > 0 {
-        let r: usize = rng.gen::<usize>() % total;
-        let cmd = if r < sets {
-            sets -= 1;
-            Cmd::gen_set(&mut rng, &g)
-        } else if r < (sets + dels) {
-            dels -= 1;
-            Cmd::gen_del(&mut rng, &g)
-        } else {
-            unreachable!();
-        };
-
-        tx.post(cmd).unwrap();
-        total = sets + dels;
-    }
-
-    let total = g.sets + g.deletes;
-    let elapsed = start.elapsed().unwrap();
-    debug!(
-        target: "genrtr",
-        "incremental_write: generated {} ops in {:?}", total, elapsed
-    );
 }
 
 pub struct IncrementalLoad<K, V>
 where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
+    K: Clone + Default + RandomKV,
+    V: Clone + Default + RandomKV,
 {
-    _thread: JoinHandle<()>,
-    rx: mpsc::Receiver<Cmd<K, V>>,
+    g: GenOptions,
+    n_gets: usize,
+    n_ranges: usize,
+    n_reverses: usize,
+    n_sets: usize,
+    n_deletes: usize,
+    rng: SmallRng,
+    items: Vec<Cmd<K,V>>,
+    elapsed: time::Duration,
 }
 
 impl<K, V> IncrementalLoad<K, V>
 where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
+    K: Clone + Default + RandomKV,
+    V: Clone + Default + RandomKV,
 {
     pub fn new(g: GenOptions) -> IncrementalLoad<K, V> {
-        let (tx, rx) = if g.channel_size > 0 {
-            let (tx, rx) = mpsc::sync_channel(g.channel_size);
-            (Tx::S(tx), rx)
-        } else {
-            let (tx, rx) = mpsc::channel();
-            (Tx::N(tx), rx)
-        };
+        let rng = SmallRng::from_seed(g.seed.to_le_bytes());
+        IncrementalLoad {
+            g: g.clone(),
+            n_gets: g.gets,
+            n_ranges: g.ranges ,
+            n_reverses: g.reverses,
+            n_sets: g.sets,
+            n_deletes: g.deletes,
+            rng,
+            items: Default::default(),
+            elapsed: Default::default(),
+        }
+    }
 
-        let _thread = { thread::spawn(move || incremental_load(g, tx)) };
-        IncrementalLoad { _thread, rx }
+    pub fn log(&self) {
+        debug!(
+            target: "genrtr",
+            "incr_load: generated {} items in {:?}",
+            self.to_total() - self.to_n_total(), self.elapsed
+        );
+    }
+
+    fn to_n_total(&self) -> usize {
+        self.n_gets + self.n_ranges + self.n_reverses +
+        //
+        self.n_sets + self.n_deletes
+    }
+
+    fn to_total(&self) -> usize {
+        self.g.gets + self.g.ranges + self.g.reverses +
+        //
+        self.g.sets + self.g.deletes
     }
 }
 
 impl<K, V> Iterator for IncrementalLoad<K, V>
 where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
+    K: Clone + Default + RandomKV,
+    V: Clone + Default + RandomKV,
 {
     type Item = Cmd<K, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.rx.recv().ok()
+        match self.items.pop() {
+            Some(item) => Some(item),
+            None if self.to_n_total() == 0 => {
+                self.log();
+                None
+            }
+            None => {
+                let a = self.n_gets + self.n_ranges + self.n_reverses;
+                let b = a + self.n_sets;
+
+                let start = time::SystemTime::now();
+                let n = cmp::min(self.to_n_total(), self.g.channel_size);
+                for _ in 0..n {
+                    let r: usize = self.rng.gen::<usize>() % self.to_n_total();
+                    let cmd = if r < self.n_gets {
+                        self.n_gets -= 1;
+                        Cmd::gen_get(&mut self.rng, &self.g)
+                    } else if r < (self.n_gets + self.n_ranges) {
+                        self.n_ranges -= 1;
+                        Cmd::gen_range(&mut self.rng, &self.g)
+                    } else if r < a {
+                        self.n_reverses -= 1;
+                        Cmd::gen_reverse(&mut self.rng, &self.g)
+                    } else if r < b {
+                        self.n_sets -= 1;
+                        Cmd::gen_set(&mut self.rng, &self.g)
+                    } else if r < self.to_n_total() {
+                        self.n_deletes -= 1;
+                        Cmd::gen_del(&mut self.rng, &self.g)
+                    } else {
+                        unreachable!();
+                    };
+                    self.items.push(cmd);
+                }
+                self.elapsed += start.elapsed().unwrap();
+                self.items.pop()
+            }
+        }
     }
-}
-
-fn incremental_load<K, V>(g: GenOptions, tx: Tx<K, V>)
-where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
-    V: 'static + Clone + Default + Send + Sync + RandomKV,
-{
-    let start = SystemTime::now();
-    let mut rng = SmallRng::from_seed(g.seed.to_le_bytes());
-
-    let (mut gets, mut ranges, mut reverses) = (g.gets, g.ranges, g.reverses);
-    let (mut sets, mut dels) = (g.sets, g.deletes);
-    let mut total = gets + ranges + reverses + sets + dels;
-    while total > 0 {
-        let r: usize = rng.gen::<usize>() % total;
-        let cmd = if r < gets {
-            gets -= 1;
-            Cmd::gen_get(&mut rng, &g)
-        } else if r < (gets + ranges) {
-            ranges -= 1;
-            Cmd::gen_range(&mut rng, &g)
-        } else if r < (gets + ranges + reverses) {
-            reverses -= 1;
-            Cmd::gen_reverse(&mut rng, &g)
-        } else if r < (gets + ranges + reverses + sets) {
-            sets -= 1;
-            Cmd::gen_set(&mut rng, &g)
-        } else if r < (gets + ranges + reverses + sets + dels) {
-            dels -= 1;
-            Cmd::gen_del(&mut rng, &g)
-        } else {
-            unreachable!();
-        };
-        tx.post(cmd).unwrap();
-        total = gets + ranges + reverses + sets + dels;
-    }
-
-    let total = g.gets + g.ranges + g.reverses + g.sets + g.deletes;
-    let elapsed = start.elapsed().unwrap();
-    debug!(
-        target: "genrtr",
-        "incremental_load: generated {} ops in {:?}", total, elapsed
-    );
 }
 
 pub enum Cmd<K, V> {
@@ -577,7 +605,7 @@ impl RandomKV for Vec<u8> {
 
 pub struct IterKeys<K>
 where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
+    K: Clone + Default + RandomKV,
 {
     key: K,
     rng: SmallRng,
@@ -586,7 +614,7 @@ where
 
 impl<K> IterKeys<K>
 where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
+    K: Clone + Default + RandomKV,
 {
     #[allow(dead_code)]
     pub(crate) fn new(g: &GenOptions) -> IterKeys<K> {
@@ -601,7 +629,7 @@ where
 
 impl<K> Iterator for IterKeys<K>
 where
-    K: 'static + Clone + Default + Send + Sync + RandomKV,
+    K: Clone + Default + RandomKV,
 {
     type Item = K;
 

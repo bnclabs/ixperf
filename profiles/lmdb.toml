@@ -31,7 +31,7 @@ reverses = 0
 iters = false
 # Channel size to use between generator thread and loader thread. If
 # channel size is <= ZERO, then index-ops shall be created asynchronously.
-channel_size = 0
+channel_size = 1_000_000
 
 [lmdb]
 # Name of the lmdb index.

@@ -40,7 +40,7 @@ reverses = 0
 iters = true
 
 # channel size to use between generator thread and loader thread.
-channel_size = 100_000
+channel_size = 1_000_000
 
 [rdms]
 index = "mvcc"

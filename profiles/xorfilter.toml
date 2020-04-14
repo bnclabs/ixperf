@@ -18,7 +18,7 @@ loads = 100_000_000
 # Total number of get operations.
 gets = 100_000_000
 # Channel size to use between generator thread and loader thread.
-channel_size = 0
+channel_size = 1_000_000
 
 [xorfilter]
 # no options other than the [ixperf]
