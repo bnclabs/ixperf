@@ -4,7 +4,7 @@ index = "llrb-index"
 # Key-type for the index.
 key_type = "array"
 # Value-type for the index
-value_type = "array"
+value_type = "bytes"
 
 [generator]
 # Block size if key-type is vector-of-bytes.

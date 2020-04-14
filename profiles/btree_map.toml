@@ -2,9 +2,9 @@
 # Index-type to benchmark.
 index = "btree-map"
 # Key-type for the index.
-key_type = "i32"
+key_type = "array"
 # Value-type for the index
-value_type = "i64"
+value_type = "bytes"
 
 [generator]
 # Block size if key-type is vector-of-bytes.

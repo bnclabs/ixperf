@@ -28,3 +28,4 @@ sysinfo = "0.11.7"
 
 [features]
 cpuprofile = []
+all_types = []

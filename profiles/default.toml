@@ -2,7 +2,7 @@
 # Index-type to benchmark.
 index = "lmdb"
 # Key-type for the index.
-key_type = "bytes"
+key_type = "array"
 # Value-type for the index
 value_type = "bytes"
 

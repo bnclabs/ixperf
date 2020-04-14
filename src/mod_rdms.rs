@@ -78,6 +78,7 @@ impl TryFrom<toml::Value> for RdmsOpt {
     }
 }
 
+#[cfg(feature = "all_types")]
 pub fn do_rdms_index(p: Profile) -> Result<(), String> {
     let name = p.rdms.name.clone();
     match (p.key_type.as_str(), p.val_type.as_str()) {
@@ -91,6 +92,17 @@ pub fn do_rdms_index(p: Profile) -> Result<(), String> {
         ("array", "array") => Ok(perf::<[u8; 20], [u8; 20]>(&name, p)),
         ("array", "bytes") => Ok(perf::<[u8; 20], Vec<u8>>(&name, p)),
         ("bytes", "bytes") => Ok(perf::<Vec<u8>, Vec<u8>>(&name, p)),
+        _ => Err(format!(
+            "unsupported key/value types {}/{}",
+            p.key_type, p.val_type
+        )),
+    }
+}
+#[cfg(not(feature = "all_types"))]
+pub fn do_rdms_index(p: Profile) -> Result<(), String> {
+    let name = p.rdms.name.clone();
+    match (p.key_type.as_str(), p.val_type.as_str()) {
+        ("array", "bytes") => Ok(perf::<[u8; 20], Vec<u8>>(&name, p)),
         _ => Err(format!(
             "unsupported key/value types {}/{}",
             p.key_type, p.val_type

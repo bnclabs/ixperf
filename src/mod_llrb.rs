@@ -7,6 +7,7 @@ use crate::generator::{Cmd, IncrementalLoad, InitialLoad, RandomKV};
 use crate::stats;
 use crate::Profile;
 
+#[cfg(feature = "all_types")]
 pub fn perf(name: &str, p: Profile) -> Result<(), String> {
     match (p.key_type.as_str(), p.val_type.as_str()) {
         ("i32", "i32") => Ok(do_perf::<i32, i32>(name, p)),
@@ -20,6 +21,16 @@ pub fn perf(name: &str, p: Profile) -> Result<(), String> {
         ("array", "bytes") => Ok(do_perf::<[u8; 20], Vec<u8>>(name, p)),
         ("bytes", "bytes") => Ok(do_perf::<Vec<u8>, Vec<u8>>(name, p)),
         ("bytes", "i64") => Ok(do_perf::<Vec<u8>, i64>(name, p)),
+        _ => Err(format!(
+            "unsupported key/value types {}/{}",
+            p.key_type, p.val_type
+        )),
+    }
+}
+#[cfg(not(feature = "all_types"))]
+pub fn perf(name: &str, p: Profile) -> Result<(), String> {
+    match (p.key_type.as_str(), p.val_type.as_str()) {
+        ("array", "bytes") => Ok(do_perf::<[u8; 20], Vec<u8>>(name, p)),
         _ => Err(format!(
             "unsupported key/value types {}/{}",
             p.key_type, p.val_type

@@ -79,6 +79,7 @@ impl WalOpt {
     }
 }
 
+#[cfg(feature = "all_types")]
 pub(crate) fn perf(name: &str, p: Profile) -> Result<(), String> {
     match (
         p.key_type.as_str(),
@@ -104,6 +105,26 @@ pub(crate) fn perf(name: &str, p: Profile) -> Result<(), String> {
         }
         ("bytes", "bytes", "random_state") => {
             do_perf::<Vec<u8>, Vec<u8>, _>(name, p, RandomState::new())
+        }
+        _ => Err(format!(
+            "unsupported key/value types {}/{} build_hasher:{}",
+            p.key_type,
+            p.val_type,
+            p.wal.build_hasher.as_str(),
+        ))?,
+    };
+
+    Ok(())
+}
+#[cfg(not(feature = "all_types"))]
+pub(crate) fn perf(name: &str, p: Profile) -> Result<(), String> {
+    match (
+        p.key_type.as_str(),
+        p.val_type.as_str(),
+        p.wal.build_hasher.as_str(),
+    ) {
+        ("array", "bytes", "random_state") => {
+            do_perf::<[u8; 20], Vec<u8>, _>(name, p, RandomState::new())
         }
         _ => Err(format!(
             "unsupported key/value types {}/{} build_hasher:{}",
