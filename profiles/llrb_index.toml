@@ -28,7 +28,7 @@ reverses = 0
 # Benchmark a full table scan.
 iters = true
 # Channel size to use between generator thread and loader thread.
-channel_size = 1_000_000
+channel_size = 100_000
 
 [llrb-index]
 # no options other than the [ixperf]
